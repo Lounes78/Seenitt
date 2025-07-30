@@ -1,0 +1,38 @@
+# OpenImages V7 class IDs for vegetation/plant filtering
+# These are example class IDs - you should update these with the actual
+# plant and vegetation class IDs from the OpenImages V7 dataset
+
+classes:
+  # Trees and woody plants
+  - 1      # Tree
+  - 47     # Plant
+  - 59     # Flower
+  - 86     # Houseplant
+  - 93     # Rose
+  - 121    # Leaf
+  - 136    # Branch
+  - 156    # Trunk
+  - 174    # Palm tree
+  - 199    # Christmas tree
+  - 286    # Bamboo
+  - 296    # Cactus
+  - 321    # Fern
+  - 365    # Moss
+  - 398    # Mushroom
+  - 399    # Vine
+  - 456    # Shrub
+  - 499    # Bush
+  - 512    # Grass
+  - 567    # Weed
+  - 578    # Herb
+  - 589    # Seedling
+  - 612    # Bonsai
+
+# Note: These are example IDs. You need to map the actual OpenImages V7 
+# class IDs for vegetation. You can find the complete list at:
+# https://github.com/openimages/dataset/blob/master/dict.csv
+
+# To find plant-related classes, search for terms like:
+# - Tree, Plant, Flower, Leaf, Branch, Grass, etc.
+# - Specific plant types: Rose, Cactus, Fern, etc.
+# - Garden elements: Shrub, Bush, Herb, etc.

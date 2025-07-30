@@ -1,0 +1,1 @@
+"""Test package for Smart Glasses Plant Recognition system."""

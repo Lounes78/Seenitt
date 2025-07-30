@@ -1,0 +1,45 @@
+# Smart Glasses Plant Recognition Configuration
+
+# YOLO Detection Settings
+yolo:
+  model_path: "yolov8x-oiv7.pt"
+  confidence_threshold: 0.3
+  device: "cuda"  # or "cpu"
+
+# Class Filtering (OpenImages V7 vegetation classes)
+filtering:
+  plant_classes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Replace with actual plant class IDs
+  min_bbox_area: 1000  # Minimum bounding box area in pixels
+  max_bbox_area: 500000  # Maximum bounding box area in pixels
+
+# Quality Assessment
+quality:
+  clip_model: "openai/clip-vit-base-patch32"
+  min_quality_score: 0.3
+  image_size: [224, 224]
+
+# Similarity Detection
+similarity:
+  threshold: 0.85
+  embedding_model: "openai/clip-vit-base-patch32"
+
+# Final Validation API
+validation:
+  api_endpoint: "https://your-qwen-endpoint.com/vision"
+  timeout: 30
+  retry_attempts: 3
+  min_validation_score: 70
+
+# Processing Pipeline
+pipeline:
+  batch_size: 32
+  output_format: "json"
+  save_intermediate_results: true
+  cleanup_temp_files: false
+
+# Paths
+paths:
+  data_dir: "data"
+  output_dir: "output"
+  temp_dir: "temp"
+  models_dir: "models"
