@@ -322,7 +322,8 @@ class IntraTrackFilterStage(BaseStage):
             
             if best_crop:
                 # Copy selected crop to output directory
-                original_path = Path(best_crop.get('filtered_filepath', best_crop.get('filepath')))\n                new_filename = f"track_{track_id}_selected.jpg"
+                original_path = Path(best_crop.get('filtered_filepath', best_crop.get('filepath')))
+                new_filename = f"track_{track_id}_selected.jpg"
                 new_path = selected_dir / new_filename
                 
                 try:

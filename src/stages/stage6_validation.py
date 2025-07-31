@@ -4,6 +4,9 @@ import requests
 import base64
 import time
 import json
+import re
+import threading
+import concurrent.futures
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import shutil
@@ -28,8 +31,12 @@ class FinalValidationStage(BaseStage):
         self.api_endpoint = validation_config.get('api_endpoint', '')
         self.timeout = validation_config.get('timeout', 30)
         self.retry_attempts = validation_config.get('retry_attempts', 3)
-        self.min_validation_score = validation_config.get('min_validation_score', 70)
-        self.request_delay = validation_config.get('request_delay', 0.3)  # seconds between requests
+        self.min_validation_score = validation_config.get('min_validation_score', 40)  # Lower threshold
+        self.request_delay = validation_config.get('request_delay', 0.1)  # seconds between requests
+        
+        # Parallel processing configuration
+        self.enable_parallel = validation_config.get('enable_parallel', True)
+        self.max_workers = validation_config.get('max_workers', 22)  # Match vLLM capacity
         
         # Validation prompt configuration
         self.validation_prompt = validation_config.get('validation_prompt', self._get_default_prompt())
@@ -48,16 +55,16 @@ class FinalValidationStage(BaseStage):
         """Get default validation prompt."""
         return (
             "I am developing a smart glasses app that detects plants and trees in real time. "
-            "For each cropped image, please answer: Is this a high-quality, well-framed, clear, "
-            "and centered close-up photo of ONE SINGLE, COMPLETE plant or tree suitable for display in a botanical identification app? "
-            "CRITICAL REQUIREMENTS: "
-            "1. There must be ONLY ONE individual plant or tree visible, not multiple plants/trees clustered together "
-            "2. The ENTIRE plant or tree must be visible and complete - NOT cropped or cut off at edges "
-            "3. No messy, disorganized, or cluttered vegetation - only one clean, isolated specimen "
-            "4. The plant/tree should be the clear main subject, well-centered and properly framed "
-            "Only answer \"yes\" or \"no\", and give a quality score from 0 (worst) to 100 (best) based on clarity, "
-            "framing, lighting, completeness, and suitability for botanical identification. Respond in the exact format: "
-            "answer: yes/no, score: X "
+            "For each cropped image, please answer: Is this a clear photo of a plant or tree that would be "
+            "useful for botanical identification? "
+            "REQUIREMENTS: "
+            "1. The image should show vegetation (plants, trees, flowers, leaves, branches) "
+            "2. The vegetation should be reasonably clear and identifiable "
+            "3. REJECT images that show ONLY bare tree trunks without visible leaves, branches, or foliage "
+            "4. ACCEPT images even if they show multiple plants or partial plants, as long as vegetation is clearly visible "
+            "Answer \"yes\" if the image shows identifiable vegetation (not just bare trunk), \"no\" otherwise. "
+            "Give a quality score from 0 (worst) to 100 (best) based on clarity and usefulness for plant identification. "
+            "Respond in the exact format: answer: yes/no, score: X "
             "where X is an integer between 0 and 100."
         )
     
@@ -138,7 +145,7 @@ class FinalValidationStage(BaseStage):
         return None
     
     def _parse_validation_response(self, response_text: str) -> Tuple[Optional[bool], Optional[int]]:
-        """Parse validation response from API.
+        """Parse validation response from API with improved parsing.
         
         Args:
             response_text: Raw response text from API
@@ -147,5 +154,504 @@ class FinalValidationStage(BaseStage):
             Tuple of (answer, score) or (None, None) if parsing failed
         """
         try:
-            # Expected format: answer: yes/no, score: X
-            parts = response_text.lower().replace(" ", "").split(",")\n            answer_part = parts[0].split(":")[1]\n            score_part = parts[1].split(":")[1]\n            \n            answer = answer_part == "yes"\n            score = int(score_part)\n            \n            return answer, score\n            \n        except Exception as e:\n            self.logger.warning(f"Failed to parse validation response: '{response_text}' - {e}")\n            return None, None\n    \n    def _parse_identification_response(self, response_text: str) -> Optional[Dict[str, Any]]:\n        """Parse plant identification response from API.\n        \n        Args:\n            response_text: Raw response text from API\n            \n        Returns:\n            Parsed identification data or None if parsing failed\n        """\n        try:\n            # Try to extract JSON from response\n            import re\n            json_match = re.search(r'\\{.*\\}', response_text, re.DOTALL)\n            if json_match:\n                json_str = json_match.group(0)\n                identification_data = json.loads(json_str)\n                return identification_data\n            else:\n                self.logger.warning(f"No JSON found in identification response: {response_text}")\n                return None\n                \n        except Exception as e:\n            self.logger.warning(f"Failed to parse identification response: '{response_text}' - {e}")\n            return None\n    \n    def _validate_single_image(self, image_path: str) -> Dict[str, Any]:\n        """Validate a single image using the API.\n        \n        Args:\n            image_path: Path to image file\n            \n        Returns:\n            Dictionary with validation results\n        """\n        # Encode image\n        image_b64 = self._encode_image_to_base64(image_path)\n        if not image_b64:\n            return {\n                'validation_passed': False,\n                'validation_score': 0,\n                'error': 'Failed to encode image'\n            }\n        \n        # Perform validation\n        validation_response = self._make_api_request(self.validation_prompt, image_b64)\n        \n        if validation_response is None:\n            return {\n                'validation_passed': False,\n                'validation_score': 0,\n                'error': 'API request failed'\n            }\n        \n        # Parse validation response\n        answer, score = self._parse_validation_response(validation_response)\n        \n        if answer is None or score is None:\n            return {\n                'validation_passed': False,\n                'validation_score': 0,\n                'error': 'Failed to parse validation response',\n                'raw_response': validation_response\n            }\n        \n        # Check if validation passed\n        validation_passed = answer and score >= self.min_validation_score\n        \n        result = {\n            'validation_passed': validation_passed,\n            'validation_answer': answer,\n            'validation_score': score,\n            'raw_validation_response': validation_response\n        }\n        \n        # Perform plant identification if validation passed and enabled\n        if validation_passed and self.enable_plant_identification:\n            time.sleep(self.request_delay)  # Delay between requests\n            \n            identification_response = self._make_api_request(self.identification_prompt, image_b64)\n            \n            if identification_response:\n                identification_data = self._parse_identification_response(identification_response)\n                if identification_data:\n                    result['plant_identification'] = identification_data\n                    result['raw_identification_response'] = identification_response\n                else:\n                    result['identification_error'] = 'Failed to parse identification response'\n                    result['raw_identification_response'] = identification_response\n            else:\n                result['identification_error'] = 'Identification API request failed'\n        \n        return result\n    \n    def process(self, input_data: Dict[str, Any], output_dir: str) -> Dict[str, Any]:\n        """Main processing method for final validation.\n        \n        Args:\n            input_data: Results from quality assessment stage\n            output_dir: Directory to save results\n            \n        Returns:\n            Dictionary containing validation results\n        """\n        self.logger.info("Starting final validation with Qwen 2.5VL API")\n        \n        high_quality_crops = input_data['high_quality_crops']\n        self.processed_images = len(high_quality_crops)\n        \n        if self.processed_images == 0:\n            self.logger.warning("No high-quality crops to validate")\n            return {\n                'validated_crops': [],\n                'validation_results': {},\n                'plant_identifications': {},\n                'validated_directory': '',\n                'stage_metrics': self.get_metrics()\n            }\n        \n        # Create output directory for validated images\n        validated_dir = Path(output_dir) / "validated_crops"\n        ensure_dir(validated_dir)\n        \n        validated_crops = []\n        plant_identifications = {}\n        \n        # Process each image\n        for i, crop in enumerate(high_quality_crops):\n            image_path = crop.get('high_quality_filepath', \n                               crop.get('unique_filepath', \n                                       crop.get('selected_filepath', \n                                               crop.get('filepath'))))\n            \n            if not image_path or not Path(image_path).exists():\n                self.logger.warning(f"Image path not found: {image_path}")\n                continue\n            \n            track_id = crop.get('track_id')\n            self.logger.info(f"Validating image {i+1}/{self.processed_images} (track {track_id})")\n            \n            # Validate image\n            validation_result = self._validate_single_image(image_path)\n            self.validation_results[track_id] = validation_result\n            \n            # If validation passed, copy to output directory\n            if validation_result.get('validation_passed', False):\n                new_filename = f"validated_track_{track_id}.jpg"\n                new_path = validated_dir / new_filename\n                \n                try:\n                    shutil.copy2(image_path, new_path)\n                    \n                    # Update crop info\n                    validated_crop = crop.copy()\n                    validated_crop['validated_filepath'] = str(new_path)\n                    validated_crop['validated_filename'] = new_filename\n                    validated_crop['validation_result'] = validation_result\n                    validated_crops.append(validated_crop)\n                    \n                    # Store plant identification if available\n                    if 'plant_identification' in validation_result:\n                        plant_identifications[track_id] = validation_result['plant_identification']\n                    \n                    self.validated_images += 1\n                    \n                except Exception as e:\n                    self.logger.warning(f"Failed to copy validated crop {image_path}: {e}")\n            else:\n                # Log validation failure reason\n                error = validation_result.get('error', 'Unknown error')\n                score = validation_result.get('validation_score', 0)\n                self.logger.debug(f"Track {track_id} validation failed: {error} (score: {score})")\n            \n            # Add delay between requests to avoid rate limiting\n            if i < self.processed_images - 1:  # Don't delay after last image\n                time.sleep(self.request_delay)\n        \n        # Generate summary\n        summary_data = self._generate_summary(validated_crops, plant_identifications)\n        \n        # Compile results\n        results = {\n            'validated_crops': validated_crops,\n            'validation_results': self.validation_results,\n            'plant_identifications': plant_identifications,\n            'validated_directory': str(validated_dir),\n            'summary': summary_data,\n            'validation_config': {\n                'api_endpoint': self.api_endpoint,\n                'min_validation_score': self.min_validation_score,\n                'enable_plant_identification': self.enable_plant_identification\n            },\n            'api_statistics': self.api_stats,\n            'stage_metrics': self.get_metrics()\n        }\n        \n        # Save results\n        self.save_results(results, output_dir)\n        \n        # Save summary as separate file\n        summary_path = Path(output_dir) / "plant_summary.json"\n        with open(summary_path, 'w') as f:\n            json.dump(summary_data, f, indent=2)\n        \n        self.logger.info(f"Final validation complete: {self.validated_images} validated images ")\n                        f"from {self.processed_images} input images ")\n                        f"(validation rate: {self.validated_images/max(1, self.processed_images)*100:.1f}%)")\n        \n        return results\n    \n    def _generate_summary(self, validated_crops: List[Dict[str, Any]], \n                         plant_identifications: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:\n        """Generate summary of validated plants for user consumption.\n        \n        Args:\n            validated_crops: List of validated crop data\n            plant_identifications: Plant identification data by track ID\n            \n        Returns:\n            Summary data for end user\n        """\n        plants_found = []\n        \n        for crop in validated_crops:\n            track_id = crop.get('track_id')\n            validation_result = crop.get('validation_result', {})\n            \n            plant_info = {\n                'track_id': track_id,\n                'image_path': crop.get('validated_filepath'),\n                'validation_score': validation_result.get('validation_score', 0),\n                'frame_captured': crop.get('frame', 0)\n            }\n            \n            # Add identification info if available\n            if track_id in plant_identifications:\n                identification = plant_identifications[track_id]\n                plant_info.update({\n                    'common_name': identification.get('common_name', 'Unknown'),\n                    'scientific_name': identification.get('scientific_name', 'Unknown'),\n                    'plant_type': identification.get('plant_type', 'Unknown'),\n                    'identification_confidence': identification.get('confidence', 0),\n                    'description': identification.get('description', ''),\n                    'season': identification.get('season', '')\n                })\n            else:\n                plant_info.update({\n                    'common_name': 'Plant/Tree',\n                    'scientific_name': 'Unknown',\n                    'plant_type': 'Unknown',\n                    'identification_confidence': 0,\n                    'description': 'High-quality plant image validated',\n                    'season': ''\n                })\n            \n            plants_found.append(plant_info)\n        \n        # Sort by validation score (highest first)\n        plants_found.sort(key=lambda x: x['validation_score'], reverse=True)\n        \n        # Generate statistics\n        plant_types = [p.get('plant_type', 'Unknown') for p in plants_found if p.get('plant_type') != 'Unknown']\n        type_counts = {}\n        for plant_type in plant_types:\n            type_counts[plant_type] = type_counts.get(plant_type, 0) + 1\n        \n        summary = {\n            'total_plants_found': len(plants_found),\n            'plants_with_identification': len(plant_identifications),\n            'plant_type_distribution': type_counts,\n            'average_validation_score': (\n                sum(p['validation_score'] for p in plants_found) / max(1, len(plants_found))\n            ),\n            'plants': plants_found,\n            'generation_timestamp': time.time()\n        }\n        \n        return summary\n    \n    def get_metrics(self) -> Dict[str, Any]:\n        """Get processing metrics for this stage.\n        \n        Returns:\n            Dictionary of metrics\n        """\n        return {\n            'input_images': self.processed_images,\n            'validated_images': self.validated_images,\n            'validation_pass_rate': self.validated_images / max(1, self.processed_images),\n            'api_success_rate': self.api_stats['successful_calls'] / max(1, self.api_stats['total_calls']),\n            'total_api_calls': self.api_stats['total_calls'],\n            'successful_api_calls': self.api_stats['successful_calls'],\n            'failed_api_calls': self.api_stats['failed_calls'],\n            'min_validation_score': self.min_validation_score\n        }
+            response_lower = response_text.lower().replace(" ", "")
+            
+            # Extract answer with multiple patterns
+            if "answer:yes" in response_lower or "yes," in response_lower or response_text.lower().startswith("yes"):
+                answer = True
+            elif "answer:no" in response_lower or "no," in response_lower or response_text.lower().startswith("no"):
+                answer = False
+            else:
+                if re.search(r'\byes\b', response_lower):
+                    answer = True
+                elif re.search(r'\bno\b', response_lower):
+                    answer = False
+                else:
+                    return None, None
+            
+            # Extract score with improved pattern matching
+            score_match = re.search(r'score:?(\d+)', response_lower)
+            if score_match:
+                score = int(score_match.group(1))
+            else:
+                # Look for any number in the response as fallback
+                number_match = re.search(r'(\d+)', response_lower)
+                if number_match:
+                    score = int(number_match.group(1))
+                else:
+                    score = 50  # Default score
+            
+            return answer, score
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to parse validation response: '{response_text}' - {e}")
+            return None, None
+    
+    def _parse_identification_response(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """Parse plant identification response from API.
+        
+        Args:
+            response_text: Raw response text from API
+            
+        Returns:
+            Parsed identification data or None if parsing failed
+        """
+        try:
+            # Try to extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                identification_data = json.loads(json_str)
+                return identification_data
+            else:
+                self.logger.warning(f"No JSON found in identification response: {response_text}")
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to parse identification response: '{response_text}' - {e}")
+            return None
+    
+    def _validate_single_image(self, image_path: str) -> Dict[str, Any]:
+        """Validate a single image using the API.
+        
+        Args:
+            image_path: Path to image file
+            
+        Returns:
+            Dictionary with validation results
+        """
+        # Encode image
+        image_b64 = self._encode_image_to_base64(image_path)
+        if not image_b64:
+            return {
+                'validation_passed': False,
+                'validation_score': 0,
+                'error': 'Failed to encode image'
+            }
+        
+        # Perform validation
+        validation_response = self._make_api_request(self.validation_prompt, image_b64)
+        
+        if validation_response is None:
+            return {
+                'validation_passed': False,
+                'validation_score': 0,
+                'error': 'API request failed'
+            }
+        
+        # Parse validation response
+        answer, score = self._parse_validation_response(validation_response)
+        
+        if answer is None or score is None:
+            return {
+                'validation_passed': False,
+                'validation_score': 0,
+                'error': 'Failed to parse validation response',
+                'raw_response': validation_response
+            }
+        
+        # Check if validation passed
+        validation_passed = answer and score >= self.min_validation_score
+        
+        result = {
+            'validation_passed': validation_passed,
+            'validation_answer': answer,
+            'validation_score': score,
+            'raw_validation_response': validation_response
+        }
+        
+        # Perform plant identification if validation passed and enabled
+        if validation_passed and self.enable_plant_identification:
+            time.sleep(self.request_delay)  # Delay between requests
+            
+            identification_response = self._make_api_request(self.identification_prompt, image_b64)
+            
+            if identification_response:
+                identification_data = self._parse_identification_response(identification_response)
+                if identification_data:
+                    result['plant_identification'] = identification_data
+                    result['raw_identification_response'] = identification_response
+                else:
+                    result['identification_error'] = 'Failed to parse identification response'
+                    result['raw_identification_response'] = identification_response
+            else:
+                result['identification_error'] = 'Identification API request failed'
+        
+        return result
+    
+    def _validate_image_parallel(self, crop: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        """Validate a single image for parallel processing.
+        
+        Args:
+            crop: Crop data dictionary
+            
+        Returns:
+            Tuple of (track_id, validation_result)
+        """
+        track_id = crop.get('track_id')
+        image_path = crop.get('high_quality_filepath', 
+                           crop.get('unique_filepath', 
+                                   crop.get('selected_filepath', 
+                                           crop.get('filepath'))))
+        
+        if not image_path or not Path(image_path).exists():
+            return track_id, {
+                'validation_passed': False,
+                'validation_score': 0,
+                'error': f'Image path not found: {image_path}'
+            }
+        
+        # Use the existing validation method
+        return track_id, self._validate_single_image(image_path)
+    
+    def _process_parallel(self, high_quality_crops: List[Dict[str, Any]], output_dir: str) -> Dict[str, Any]:
+        """Process images using parallel validation.
+        
+        Args:
+            high_quality_crops: List of high quality crop data
+            output_dir: Output directory for results
+            
+        Returns:
+            Dictionary containing validation results
+        """
+        self.logger.info(f"Starting parallel validation with {self.max_workers} workers")
+        
+        start_time = time.time()
+        validation_results = {}
+        validated_crops = []
+        plant_identifications = {}
+        
+        # Create output directory for validated images
+        validated_dir = Path(output_dir) / "validated_crops"
+        validated_dir.mkdir(exist_ok=True)
+        
+        # Progress tracking
+        completed = 0
+        lock = threading.Lock()
+        
+        def update_progress():
+            nonlocal completed
+            with lock:
+                completed += 1
+                if completed % 10 == 0 or completed == len(high_quality_crops):
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    remaining = (len(high_quality_crops) - completed) / rate if rate > 0 else 0
+                    self.logger.info(f"Progress: {completed}/{len(high_quality_crops)} "
+                                   f"({completed/len(high_quality_crops)*100:.1f}%) - "
+                                   f"Rate: {rate:.1f}/s - ETA: {remaining:.0f}s")
+        
+        # Process with thread pool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_crop = {executor.submit(self._validate_image_parallel, crop): crop 
+                            for crop in high_quality_crops}
+            
+            # Process completed tasks
+            for future in concurrent.futures.as_completed(future_to_crop):
+                crop = future_to_crop[future]
+                try:
+                    track_id, result = future.result()
+                    validation_results[track_id] = result
+                    
+                    # If validation passed, copy to output directory
+                    if result.get('validation_passed', False):
+                        image_path = crop.get('high_quality_filepath', 
+                                           crop.get('unique_filepath', 
+                                                   crop.get('selected_filepath', 
+                                                           crop.get('filepath'))))
+                        
+                        new_filename = f"validated_track_{track_id}.jpg"
+                        new_path = validated_dir / new_filename
+                        
+                        try:
+                            shutil.copy2(image_path, new_path)
+                            
+                            # Update crop info
+                            validated_crop = crop.copy()
+                            validated_crop['validated_filepath'] = str(new_path)
+                            validated_crop['validated_filename'] = new_filename
+                            validated_crop['validation_result'] = result
+                            validated_crops.append(validated_crop)
+                            
+                            # Store plant identification if available
+                            if 'plant_identification' in result:
+                                plant_identifications[track_id] = result['plant_identification']
+                            
+                            self.validated_images += 1
+                            
+                        except Exception as e:
+                            self.logger.warning(f"Failed to copy validated crop {image_path}: {e}")
+                    
+                    update_progress()
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing crop {crop.get('track_id')}: {e}")
+                    update_progress()
+        
+        processing_time = time.time() - start_time
+        self.logger.info(f"Parallel validation completed in {processing_time:.1f} seconds "
+                        f"(rate: {len(high_quality_crops)/processing_time:.1f} images/s)")
+        
+        return {
+            'validated_crops': validated_crops,
+            'validation_results': validation_results,
+            'plant_identifications': plant_identifications,
+            'validated_directory': str(validated_dir),
+            'processing_metrics': {
+                'processing_time': processing_time,
+                'processing_rate': len(high_quality_crops)/processing_time,
+                'parallel_workers': self.max_workers
+            }
+        }
+    
+    def process(self, input_data: Dict[str, Any], output_dir: str) -> Dict[str, Any]:
+        """Main processing method for final validation.
+        
+        Args:
+            input_data: Results from quality assessment stage
+            output_dir: Directory to save results
+            
+        Returns:
+            Dictionary containing validation results
+        """
+        self.logger.info("Starting final validation with Qwen 2.5VL API")
+        
+        high_quality_crops = input_data['high_quality_crops']
+        self.processed_images = len(high_quality_crops)
+        
+        if self.processed_images == 0:
+            self.logger.warning("No high-quality crops to validate")
+            return {
+                'validated_crops': [],
+                'validation_results': {},
+                'plant_identifications': {},
+                'validated_directory': '',
+                'stage_metrics': self.get_metrics()
+            }
+        
+        # Choose processing mode
+        if self.enable_parallel and self.processed_images > 1:
+            self.logger.info(f"Using parallel processing with {self.max_workers} workers")
+            parallel_results = self._process_parallel(high_quality_crops, output_dir)
+            
+            # Extract results from parallel processing
+            validated_crops = parallel_results['validated_crops']
+            validation_results = parallel_results['validation_results']
+            plant_identifications = parallel_results['plant_identifications']
+            validated_dir = Path(parallel_results['validated_directory'])
+            
+        else:
+            # Fall back to sequential processing
+            self.logger.info("Using sequential processing")
+            
+            # Create output directory for validated images
+            validated_dir = Path(output_dir) / "validated_crops"
+            ensure_dir(validated_dir)
+            
+            validated_crops = []
+            plant_identifications = {}
+            validation_results = {}
+            
+            # Process each image sequentially
+            for i, crop in enumerate(high_quality_crops):
+                image_path = crop.get('high_quality_filepath', 
+                                   crop.get('unique_filepath', 
+                                           crop.get('selected_filepath', 
+                                                   crop.get('filepath'))))
+                
+                if not image_path or not Path(image_path).exists():
+                    self.logger.warning(f"Image path not found: {image_path}")
+                    continue
+                
+                track_id = crop.get('track_id')
+                self.logger.info(f"Validating image {i+1}/{self.processed_images} (track {track_id})")
+                
+                # Validate image
+                validation_result = self._validate_single_image(image_path)
+                validation_results[track_id] = validation_result
+                
+                # If validation passed, copy to output directory
+                if validation_result.get('validation_passed', False):
+                    new_filename = f"validated_track_{track_id}.jpg"
+                    new_path = validated_dir / new_filename
+                    
+                    try:
+                        shutil.copy2(image_path, new_path)
+                        
+                        # Update crop info
+                        validated_crop = crop.copy()
+                        validated_crop['validated_filepath'] = str(new_path)
+                        validated_crop['validated_filename'] = new_filename
+                        validated_crop['validation_result'] = validation_result
+                        validated_crops.append(validated_crop)
+                        
+                        # Store plant identification if available
+                        if 'plant_identification' in validation_result:
+                            plant_identifications[track_id] = validation_result['plant_identification']
+                        
+                        self.validated_images += 1
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Failed to copy validated crop {image_path}: {e}")
+                else:
+                    # Log validation failure reason
+                    error = validation_result.get('error', 'Unknown error')
+                    score = validation_result.get('validation_score', 0)
+                    self.logger.debug(f"Track {track_id} validation failed: {error} (score: {score})")
+                
+                # Add delay between requests to avoid rate limiting
+                if i < self.processed_images - 1:  # Don't delay after last image
+                    time.sleep(self.request_delay)
+        
+        # Generate summary
+        summary_data = self._generate_summary(validated_crops, plant_identifications)
+        
+        # Compile results
+        results = {
+            'validated_crops': validated_crops,
+            'validation_results': validation_results,
+            'plant_identifications': plant_identifications,
+            'validated_directory': str(validated_dir),
+            'summary': summary_data,
+            'validation_config': {
+                'api_endpoint': self.api_endpoint,
+                'min_validation_score': self.min_validation_score,
+                'enable_plant_identification': self.enable_plant_identification
+            },
+            'api_statistics': self.api_stats,
+            'stage_metrics': self.get_metrics()
+        }
+        
+        # Save results
+        self.save_results(results, output_dir)
+        
+        # Save summary as separate file
+        summary_path = Path(output_dir) / "plant_summary.json"
+        with open(summary_path, 'w') as f:
+            # Ensure summary is JSON serializable
+            serializable_summary = self._make_json_serializable(summary_data)
+            json.dump(serializable_summary, f, indent=2)
+        
+        self.logger.info(f"Final validation complete: {self.validated_images} validated images "
+                        f"from {self.processed_images} input images "
+                        f"(validation rate: {self.validated_images/max(1, self.processed_images)*100:.1f}%)")
+        
+        return results
+    
+    def _generate_summary(self, validated_crops: List[Dict[str, Any]], 
+                         plant_identifications: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate summary of validated plants for user consumption.
+        
+        Args:
+            validated_crops: List of validated crop data
+            plant_identifications: Plant identification data by track ID
+            
+        Returns:
+            Summary data for end user
+        """
+        plants_found = []
+        
+        for crop in validated_crops:
+            track_id = crop.get('track_id')
+            validation_result = crop.get('validation_result', {})
+            
+            plant_info = {
+                'track_id': track_id,
+                'image_path': crop.get('validated_filepath'),
+                'validation_score': validation_result.get('validation_score', 0),
+                'frame_captured': crop.get('frame', 0)
+            }
+            
+            # Add identification info if available
+            if track_id in plant_identifications:
+                identification = plant_identifications[track_id]
+                plant_info.update({
+                    'common_name': identification.get('common_name', 'Unknown'),
+                    'scientific_name': identification.get('scientific_name', 'Unknown'),
+                    'plant_type': identification.get('plant_type', 'Unknown'),
+                    'identification_confidence': identification.get('confidence', 0),
+                    'description': identification.get('description', ''),
+                    'season': identification.get('season', '')
+                })
+            else:
+                plant_info.update({
+                    'common_name': 'Plant/Tree',
+                    'scientific_name': 'Unknown',
+                    'plant_type': 'Unknown',
+                    'identification_confidence': 0,
+                    'description': 'High-quality plant image validated',
+                    'season': ''
+                })
+            
+            plants_found.append(plant_info)
+        
+        # Sort by validation score (highest first)
+        plants_found.sort(key=lambda x: x['validation_score'], reverse=True)
+        
+        # Generate statistics
+        plant_types = [p.get('plant_type', 'Unknown') for p in plants_found if p.get('plant_type') != 'Unknown']
+        type_counts = {}
+        for plant_type in plant_types:
+            type_counts[plant_type] = type_counts.get(plant_type, 0) + 1
+        
+        summary = {
+            'total_plants_found': len(plants_found),
+            'plants_with_identification': len(plant_identifications),
+            'plant_type_distribution': type_counts,
+            'average_validation_score': (
+                sum(p['validation_score'] for p in plants_found) / max(1, len(plants_found))
+            ),
+            'plants': plants_found,
+            'generation_timestamp': time.time()
+        }
+        
+        return summary
+    
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Convert object to JSON-serializable format.
+        
+        Args:
+            obj: Object to convert
+            
+        Returns:
+            JSON-serializable object
+        """
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # NumPy scalar
+            return obj.item()
+        elif isinstance(obj, (set, frozenset)):
+            return list(obj)
+        else:
+            return obj
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get processing metrics for this stage.
+        
+        Returns:
+            Dictionary of metrics
+        """
+        return {
+            'input_images': self.processed_images,
+            'validated_images': self.validated_images,
+            'validation_pass_rate': self.validated_images / max(1, self.processed_images),
+            'api_success_rate': self.api_stats['successful_calls'] / max(1, self.api_stats['total_calls']),
+            'total_api_calls': self.api_stats['total_calls'],
+            'successful_api_calls': self.api_stats['successful_calls'],
+            'failed_api_calls': self.api_stats['failed_calls'],
+            'min_validation_score': self.min_validation_score
+        }

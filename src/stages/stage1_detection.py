@@ -10,6 +10,7 @@ import torch
 
 from .base_stage import BaseStage
 from ..utils import ensure_dir
+import yaml
 
 
 class YOLODetectionStage(BaseStage):
@@ -35,7 +36,7 @@ class YOLODetectionStage(BaseStage):
         
         # Filtering configuration
         filtering_config = config.get('filtering', {})
-        self.plant_classes = filtering_config.get('plant_classes', [])
+        self.plant_classes = self._load_plant_classes(filtering_config)
         self.min_bbox_area = filtering_config.get('min_bbox_area', 1000)
         self.max_bbox_area = filtering_config.get('max_bbox_area', 500000)
         
@@ -51,6 +52,45 @@ class YOLODetectionStage(BaseStage):
         except Exception as e:
             self.logger.error(f"Failed to load YOLO model: {e}")
             raise
+    
+    def _load_plant_classes(self, filtering_config: Dict[str, Any]) -> List[int]:
+        """Load plant classes from configuration or filter file.
+        
+        Args:
+            filtering_config: Filtering configuration dictionary
+            
+        Returns:
+            List of plant class IDs
+        """
+        # First try to get from main config
+        plant_classes = filtering_config.get('plant_classes', [])
+        if plant_classes:
+            self.logger.info(f"Loaded {len(plant_classes)} plant classes from main config")
+            return plant_classes
+        
+        # Try to load from filter classes file
+        filter_file_path = filtering_config.get('filter_classes_file', 'config/filter_classes_OpenImagesV7.yaml')
+        
+        # Handle relative paths
+        if not Path(filter_file_path).is_absolute():
+            # Find project root (assuming this file is in src/stages/)
+            project_root = Path(__file__).parent.parent.parent
+            filter_file_path = project_root / filter_file_path
+        
+        try:
+            with open(filter_file_path, 'r') as f:
+                filter_data = yaml.safe_load(f)
+                plant_classes = filter_data.get('classes', [])
+                self.logger.info(f"Loaded {len(plant_classes)} plant classes from {filter_file_path}")
+                return plant_classes
+        except FileNotFoundError:
+            self.logger.warning(f"Filter classes file not found: {filter_file_path}")
+        except Exception as e:
+            self.logger.warning(f"Failed to load filter classes file: {e}")
+        
+        # Return empty list if nothing found
+        self.logger.warning("No plant classes configured, will process all detections")
+        return []
     
     def _calculate_bbox_area(self, bbox: List[float]) -> float:
         """Calculate bounding box area.

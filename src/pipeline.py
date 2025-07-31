@@ -210,15 +210,22 @@ class PlantRecognitionPipeline:
             # Save complete pipeline results
             results_file = Path(stage_dirs['summary']) / 'complete_pipeline_results.json'
             with open(results_file, 'w') as f:
-                json.dump(self.pipeline_results, f, indent=2)
+                # Ensure pipeline results are JSON serializable
+                serializable_results = self._make_json_serializable(self.pipeline_results)
+                json.dump(serializable_results, f, indent=2)
             
             # Save user-friendly summary
             summary_file = Path(stage_dirs['summary']) / 'plant_detection_summary.json'
             with open(summary_file, 'w') as f:
-                json.dump(summary, f, indent=2)
+                # Ensure summary is JSON serializable
+                serializable_summary = self._make_json_serializable(summary)
+                json.dump(serializable_summary, f, indent=2)
             
             self.logger.info(f"Pipeline completed successfully in {total_time:.2f} seconds")
-            self.logger.info(f"Final result: {summary['total_plants_found']} plants detected and validated")
+            
+            # Get plant count from summary (handle case where no plants found)
+            total_plants = summary.get('detection_summary', {}).get('total_plants_found', 0)
+            self.logger.info(f"Final result: {total_plants} plants detected and validated")
             
             return self.pipeline_results
             
@@ -313,6 +320,36 @@ class PlantRecognitionPipeline:
         }
         
         return pipeline_summary
+    
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Convert object to JSON-serializable format.
+        
+        Args:
+            obj: Object to convert
+            
+        Returns:
+            JSON-serializable object
+        """
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # NumPy scalar
+            return obj.item()
+        elif isinstance(obj, (set, frozenset)):
+            return list(obj)
+        else:
+            return obj
     
     def get_configuration(self) -> Dict[str, Any]:
         """Get current pipeline configuration.

@@ -234,7 +234,8 @@ class QualityAssessmentStage(BaseStage):
             clip_valid = clip_quality >= self.min_quality_score if self.enable_clip_quality else True
             blur_valid = blur_score >= self.max_blur_variance if self.enable_blur_detection else True
             
-            overall_valid = all([\n                clip_valid,
+            overall_valid = all([
+                clip_valid,
                 blur_valid,
                 brightness_valid,
                 contrast_valid,
@@ -304,7 +305,7 @@ class QualityAssessmentStage(BaseStage):
             image_path = crop.get('unique_filepath', 
                                crop.get('selected_filepath', 
                                        crop.get('filtered_filepath', 
-                                               crop.get('filepath')))
+                                               crop.get('filepath'))))
             
             if not image_path or not Path(image_path).exists():
                 self.logger.warning(f"Image path not found: {image_path}")

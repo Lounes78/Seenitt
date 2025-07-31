@@ -8,27 +8,38 @@ yolo:
 
 # Class Filtering (OpenImages V7 vegetation classes)
 filtering:
-  plant_classes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Replace with actual plant class IDs
+  filter_classes_file: "config/filter_classes_OpenImagesV7.yaml"  # Path to filter classes file
+  # plant_classes: []  # Can override filter file by specifying classes here directly
+  # NOTE: If plant_classes is specified, it takes priority over filter_classes_file
   min_bbox_area: 1000  # Minimum bounding box area in pixels
   max_bbox_area: 500000  # Maximum bounding box area in pixels
+  min_detections_per_track: 3  # Minimum detections required per track
+  min_track_duration: 1.0  # Minimum track duration in seconds
+  min_confidence_avg: 0.3  # Minimum average confidence for track
+  max_confidence_std: 0.3  # Maximum confidence standard deviation
+  min_bbox_consistency: 0.7  # Minimum bbox consistency (IoU-based)
 
 # Quality Assessment
 quality:
-  clip_model: "openai/clip-vit-base-patch32"
+  clip_model: "openai/clip-vit-large-patch14"
   min_quality_score: 0.3
   image_size: [224, 224]
 
 # Similarity Detection
 similarity:
   threshold: 0.85
-  embedding_model: "openai/clip-vit-base-patch32"
+  embedding_model: "openai/clip-vit-large-patch14"
 
 # Final Validation API
 validation:
-  api_endpoint: "https://your-qwen-endpoint.com/vision"
+  api_endpoint: "http://localhost:5000/vision"
   timeout: 30
   retry_attempts: 3
-  min_validation_score: 70
+  min_validation_score: 40  # Lower threshold for better acceptance
+  request_delay: 0.1  # Seconds between requests (reduced for parallel processing)
+  enable_parallel: true  # Enable parallel processing for faster validation
+  max_workers: 22  # Number of parallel workers (match vLLM server capacity)
+  enable_plant_identification: true  # Enable plant identification for validated images
 
 # Processing Pipeline
 pipeline:

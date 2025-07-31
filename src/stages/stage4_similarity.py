@@ -341,7 +341,7 @@ class SimilarityDetectionStage(BaseStage):
                 'selected_track_id': selected_crops[best_idx].get('track_id'),
                 'removed_track_ids': [selected_crops[idx].get('track_id') for idx in group_indices if idx != best_idx],
                 'similarity_scores': [
-                    cosine_similarity([embeddings[best_idx]], [embeddings[idx]])[0][0] 
+                    float(cosine_similarity([embeddings[best_idx]], [embeddings[idx]])[0][0])
                     for idx in group_indices if idx != best_idx
                 ]
             })

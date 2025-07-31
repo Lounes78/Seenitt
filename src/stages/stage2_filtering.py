@@ -104,7 +104,7 @@ class TrackingIDFilterStage(BaseStage):
                 'first_frame': min(d['frame'] for d in detections),
                 'last_frame': max(d['frame'] for d in detections),
                 'detections': detections
-            }\n        
+            }
         return track_stats
     
     def _calculate_std(self, values: List[float], mean: float) -> float:

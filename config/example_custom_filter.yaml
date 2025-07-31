@@ -1,0 +1,31 @@
+# Example custom filter for specific use cases
+# Copy this file and modify it for your specific needs
+
+classes:
+  # Example: Only fruit trees for orchard monitoring
+  - 10    # Apple
+  - 125   # Common fig
+  - 226   # Grape
+  - 227   # Grapefruit
+  - 306   # Lemon
+  - 323   # Mango
+  - 356   # Orange
+  - 374   # Peach
+  - 375   # Pear
+  - 389   # Pineapple
+  - 399   # Pomegranate
+  - 324   # Maple (for syrup production)
+  - 364   # Palm tree (coconut)
+  
+# To use this custom filter:
+# 1. Copy this file to a new name (e.g., orchard_filter.yaml)
+# 2. Modify the classes list for your specific needs
+# 3. Update config.yaml:
+#    filtering:
+#      filter_classes_file: "config/orchard_filter.yaml"
+
+# Other example filters you might create:
+# - garden_vegetables.yaml (vegetables only)
+# - ornamental_plants.yaml (flowers and decorative plants)
+# - forest_trees.yaml (tree species only)
+# - herb_garden.yaml (culinary herbs and spices)

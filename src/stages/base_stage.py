@@ -47,11 +47,44 @@ class BaseStage(ABC):
         output_path = Path(output_dir) / f"{self.stage_name}_results.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Convert results to JSON-serializable format
+        serializable_results = self._make_json_serializable(results)
+        
         with open(output_path, 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(serializable_results, f, indent=2)
         
         self.logger.info(f"Results saved to {output_path}")
         return str(output_path)
+    
+    def _make_json_serializable(self, obj: Any) -> Any:
+        """Convert object to JSON-serializable format.
+        
+        Args:
+            obj: Object to convert
+            
+        Returns:
+            JSON-serializable object
+        """
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int32, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif hasattr(obj, 'item'):  # NumPy scalar
+            return obj.item()
+        elif isinstance(obj, (set, frozenset)):
+            return list(obj)
+        else:
+            return obj
     
     def load_results(self, results_file: str) -> Dict[str, Any]:
         """Load results from JSON file.

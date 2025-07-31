@@ -1,38 +1,66 @@
 # OpenImages V7 class IDs for vegetation/plant filtering
-# These are example class IDs - you should update these with the actual
-# plant and vegetation class IDs from the OpenImages V7 dataset
+# Actual class IDs from OpenImages V7 dataset for plants, fruits, vegetables, and trees
 
 classes:
-  # Trees and woody plants
-  - 1      # Tree
-  - 47     # Plant
-  - 59     # Flower
-  - 86     # Houseplant
-  - 93     # Rose
-  - 121    # Leaf
-  - 136    # Branch
-  - 156    # Trunk
-  - 174    # Palm tree
-  - 199    # Christmas tree
-  - 286    # Bamboo
-  - 296    # Cactus
-  - 321    # Fern
-  - 365    # Moss
-  - 398    # Mushroom
-  - 399    # Vine
-  - 456    # Shrub
-  - 499    # Bush
-  - 512    # Grass
-  - 567    # Weed
-  - 578    # Herb
-  - 589    # Seedling
-  - 612    # Bonsai
+  # Fruits
+  - 10    # Apple
+  - 21    # Banana
+  - 89    # Cantaloupe
+  - 119   # Coconut
+  - 125   # Common fig
+  - 226   # Grape
+  - 227   # Grapefruit
+  - 306   # Lemon
+  - 323   # Mango
+  - 356   # Orange
+  - 374   # Peach
+  - 375   # Pear
+  - 389   # Pineapple
+  - 399   # Pomegranate
+  - 496   # Strawberry
+  - 579   # Watermelon
+  - 592   # Winter melon
+  - 210   # Fruit (generic)
+  
+  # Vegetables
+  - 12    # Artichoke
+  - 39    # Bell pepper
+  - 67    # Broccoli
+  - 76    # Cabbage
+  - 92    # Carrot
+  - 146   # Cucumber
+  - 213   # Garden Asparagus
+  - 404   # Potato
+  - 409   # Pumpkin
+  - 414   # Radish
+  - 486   # Squash (Plant)
+  - 540   # Tomato
+  - 566   # Vegetable (generic)
+  
+  # Trees and plants
+  - 112   # Christmas tree
+  - 324   # Maple
+  - 364   # Palm tree
+  - 553   # Tree (generic)
+  - 586   # Willow
+  - 393   # Plant (generic)
+  - 258   # Houseplant
+  
+  # Flowers and ornamental plants
+  - 126   # Common sunflower
+  - 195   # Flower (generic)
+  - 305   # Lavender (Plant)
+  - 311   # Lily
+  - 427   # Rose
+  - 196   # Flowerpot
+  
+  # Other
+  - 347   # Mushroom
 
-# Note: These are example IDs. You need to map the actual OpenImages V7 
-# class IDs for vegetation. You can find the complete list at:
-# https://github.com/openimages/dataset/blob/master/dict.csv
-
-# To find plant-related classes, search for terms like:
-# - Tree, Plant, Flower, Leaf, Branch, Grass, etc.
-# - Specific plant types: Rose, Cactus, Fern, etc.
-# - Garden elements: Shrub, Bush, Herb, etc.
+# Categories breakdown:
+# Fruits: 10, 21, 89, 119, 125, 210, 226, 227, 306, 323, 356, 374, 375, 389, 399, 496, 579, 592
+# Vegetables: 12, 39, 67, 76, 92, 146, 213, 404, 409, 414, 486, 540, 566  
+# Trees: 112, 324, 364, 553, 586
+# Plants: 393, 258
+# Flowers: 126, 195, 305, 311, 427, 196
+# Other: 347

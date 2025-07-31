@@ -85,6 +85,13 @@ yolo:
   confidence_threshold: 0.3
   device: "cuda"  # or "cpu"
 
+# Class Filtering
+filtering:
+  filter_classes_file: "config/filter_classes_OpenImagesV7.yaml"
+  # plant_classes: []  # Override filter file with specific classes
+  min_bbox_area: 1000
+  min_detections_per_track: 3
+
 # Quality Assessment
 quality:
   min_quality_score: 0.3
@@ -102,6 +109,19 @@ validation:
   min_validation_score: 70
   enable_plant_identification: true
 ```
+
+### Plant Class Filtering
+
+The system uses `config/filter_classes_OpenImagesV7.yaml` to define which plant classes to detect:
+
+- **45 plant classes** including fruits, vegetables, trees, flowers, and houseplants
+- **Organized by category** for easy customization
+- **Custom filters** can be created for specific use cases (orchards, gardens, forests)
+
+To create a custom filter:
+1. Copy `config/example_custom_filter.yaml`
+2. Modify the classes list for your needs
+3. Update `filter_classes_file` in `config.yaml`
 
 ## Project Structure
 

@@ -81,14 +81,14 @@ Examples:
         results = pipeline.process_video(str(video_path), args.output)
         
         # Display results summary
-        summary = results['summary']
-        detection_summary = summary['detection_summary']
-        session_info = summary['session_info']
+        summary = results.get('summary', {})
+        detection_summary = summary.get('detection_summary', {})
+        session_info = summary.get('session_info', {})
         
         logger.info("=== PROCESSING COMPLETE ===")
-        logger.info(f"Plants detected and validated: {detection_summary['total_plants_found']}")
-        logger.info(f"Plants with identification: {detection_summary['plants_with_identification']}")
-        logger.info(f"Processing time: {session_info['total_processing_time']}")
+        logger.info(f"Plants detected and validated: {detection_summary.get('total_plants_found', 0)}")
+        logger.info(f"Plants with identification: {detection_summary.get('plants_with_identification', 0)}")
+        logger.info(f"Processing time: {session_info.get('total_processing_time', 'Unknown')}")
         logger.info(f"Results saved to: {args.output}")
         
         # Show plant types if any were identified
@@ -99,7 +99,7 @@ Examples:
                 logger.info(f"  - {plant_type}: {count}")
         
         # Show pipeline efficiency
-        pipeline_metrics = summary['pipeline_performance']
+        pipeline_metrics = summary.get('pipeline_performance', {})
         efficiency = pipeline_metrics.get('pipeline_efficiency', 0) * 100
         logger.info(f"Pipeline efficiency: {efficiency:.1f}% (valid plants / total detections)")
         
