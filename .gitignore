@@ -1,6 +1,4 @@
-
 config/config.py
-
 # Python
 __pycache__/
 *.py[cod]
