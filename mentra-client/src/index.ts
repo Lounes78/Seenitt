@@ -70,7 +70,7 @@ class SeenittApp extends AppServer {
 
 
         // Serve React App (production)
-        if (process.env.NODE_ENV !== 'production' && fs.existsSync(path.resolve(REACT_BUILD_PATH))){
+        if (process.env.NODE_ENV === 'production' && fs.existsSync(path.resolve(REACT_BUILD_PATH))){
             app.use(express.static(path.resolve(REACT_BUILD_PATH))); // Turn the Express server into a file server for React files
         }
 
@@ -136,7 +136,43 @@ class SeenittApp extends AppServer {
 
 
 
+        // Manual processing -- nah 
+        app.post('/api/process', (req: AuthenticatedRequest, res) => {
+            const userId = req.authUserId;
+            if (!userId){
+                res.status(401).json({error: 'Unauthorized'})
+                return;
+            }
+
+            const { streamUrl, sessionId } = req.body;
+            if(streamUrl && sessionId) {
+                this.startProcessing(sessionId, userId, streamUrl);
+                res.json({status: 'started', sessionId});
+            }
+            else {
+                res.status(400).json({error: "streamUrl and sessionId required"})
+            }
+        });
+
+
+        // react app for all other routes #SinglePageApplication
+        if (process.env.NODE_ENV === 'production') {
+            app.get('*', (req, res) => {
+                const index_path = path.resolve(REACT_BUILD_PATH, 'index.html');
+                if (fs.existsSync(index_path)){
+                    res.sendFile(index_path);
+                }
+                else {
+                    res.status(404).json({error: 'React app not built or index.html path error ...'})
+                }
+            });
+        } 
     }
+
+
+    // time to handle new MentraOS session
+    
+
 
 
 
