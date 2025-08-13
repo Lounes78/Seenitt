@@ -1,0 +1,21 @@
+{
+  "name": "seenitt-mentra-client",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "bun run dist/index.js",
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "@mentra/react": "^2.0.2",
+    "@mentra/sdk": "latest",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

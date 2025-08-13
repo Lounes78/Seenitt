@@ -1,6 +1,4 @@
-
-config/openrouter_api_keys.py
-
+config/config.py
 # Python
 __pycache__/
 *.py[cod]

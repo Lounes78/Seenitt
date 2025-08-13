@@ -5,7 +5,7 @@ import json
 from PIL import Image
 import os
 import ast
-from config.openrouter_api_keys import API_KEY_PERSO, API_KEY_COIN, API_KEY_PRO
+from config.config import API_KEY_PERSO, API_KEY_COIN, API_KEY_PRO
 
 API_KEYS = [API_KEY_PERSO, API_KEY_COIN, API_KEY_PRO]
 
