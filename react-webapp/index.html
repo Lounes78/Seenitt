@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <!-- SEO & Meta Tags -->
+        <title> SeenittApp - archive evrything </title>
+        <meta name="description" content="Plant identification with mapping using smart glasses" />
+        <meta name="author" content="SeenittApp" />
+        <meta name="robots" content="index, follow" />
+
+        <!-- Favicon -->
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+
+        <!-- Progressive Web App -->
+        <meta name="theme-color" content="#2563eb" />
+        <link rel="manifest" href="/manifest.json" /> <!--So the site can be installed like an app -->
+
+        <!-- Performance & Security -->
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="referrer" content="strict-origin-when-cross-origin" /> <!-- about the way referrencing is done-->
+
+        <!-- Preconnect to external services for better performance -->
+        <link rel="preconnect" href="https://api.mapbox.com" />
+        <link rel="preconnect" href="https://tiles.mapbox.com" />
+
+        <!-- Mapbox GL CSS (required for the map to display properly) -->
+        <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+
+        <!-- inline so that it doesn t lose time fetching the .css -->
+        <style>
+            #loading-screen {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+                color: white;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            }
+
+            #loading-screen.hidden {
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.5s ease-out, visibility 0.5s ease-out;
+            }
+
+
+            .loading-spinner {
+                width: 50px;
+                height: 50px;
+                border: 4px solid rgba(255, 255, 255, 0.3);
+                border-radius: 50%;
+                border-top-color: #fff;
+                animation: spin 1s ease-in-out infinite;
+                margin-bottom: 20px;
+            }
+
+            .loading-text {
+                font-size: 18px;
+                font-weight: 500;
+                margin-bottom: 10px;
+            }
+
+            .loading-subtitle {
+                font-size: 14px;
+                opacity: 0.8;
+            }
+
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            /*  prevents FOUC ("Flash of Unstyled Content") by setting default styles immediately*/
+
+            body {
+                margin: 0;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+                background-color: #f8fafc;
+            }
+
+            /* Hide the root div initially to prevent FOUC */
+            #root {
+                opacity: 0;
+                transition: opacity 0.3s ease-in;
+            }
+
+            #root.loaded {
+                opacity: 1;
+            }
+        </style>
+
+    </head>
+
+
+
+    <body>
+        <!-- loading screen -->
+        <div id="loading-screen">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Loading SeenittApp</div>
+        <div class="loading-subtitle">Initializing map and camera stream...</div>
+        </div>
+
+        <!-- React Root -->
+        <div id="root"></div>
+
+        <!-- No JavaScript fallback -->
+        <noscript>
+            <div style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">
+                <h2>JavaScript Required</h2>
+                <p>This application requires JavaScript to be enabled in your browser.</p>
+                <p>Please enable JavaScript and refresh the page.</p>
+            </div>
+        </noscript>
+
+        <!-- Loading Management Script -->
+        <script>
+            // Hide loading screen when React app is ready
+            window.hideLoadingScreen = function() {
+                const loadingScreen = document.getElementById('loading-screen');
+                const root = document.getElementById('root');
+
+                if (loadingScreen && root) {
+                    loadingScreen.classList.add('hidden');
+                    root.classList.add('loaded');
+
+                    // Remove loading screen from DOM after transition
+                    setTimeout(() => {
+                        if (loadingScreen.parentNode) {
+                            loadingScreen.parentNode.removeChild(loadingScreen);
+                        }
+                    }, 500);
+                }
+            };
+
+            // Auto-hide loading screen after maximum timeout (fallback)
+            setTimeout(() => {
+                if (window.hideLoadingScreen) {
+                    window.hideLoadingScreen();
+                }
+            }, 10000); // 10 seconds max
+        </script>
+
+        <!-- THIS IS THE CRUCIAL LINE THAT WAS MISSING -->
+        <script type="module" src="/src/index.tsx"></script>
+    </body>
+
+</html>
