@@ -65,6 +65,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [usingRealMapbox, setUsingRealMapbox] = useState(false);
   const [mapState, setMapState] = useState<MapState>({
     center: MAP_DEFAULTS.center,
     zoom: MAP_DEFAULTS.zoom
@@ -102,6 +103,50 @@ export const MapView: React.FC<MapViewProps> = ({
       items: [img]
     }));
 
+  // Add markers to real Mapbox map
+  const addMarkersToMap = useCallback(async (map: any) => {
+    console.log('📍 Adding markers to Mapbox map...');
+    
+    // Import Mapbox GL for marker creation
+    const mapboxgl = await import('mapbox-gl');
+    
+    // Clear existing markers
+    markersRef.current.clear();
+    
+    // Add markers for each image with location
+    imagesWithLocation.forEach((image) => {
+      if (image.location) {
+        // Create marker element
+        const markerElement = document.createElement('div');
+        markerElement.className = 'mapbox-marker';
+        markerElement.innerHTML = `
+          <div class="marker-container">
+            <div class="marker-image">
+              <img src="${image.thumbnailUrl}" alt="Image" onerror="this.src='https://via.placeholder.com/60x60?text=📷'" />
+            </div>
+            <div class="marker-status" style="background-color: #28a745;"></div>
+          </div>
+        `;
+        
+        // Create Mapbox marker
+        const marker = new mapboxgl.default.Marker(markerElement)
+          .setLngLat([image.location.longitude, image.location.latitude])
+          .addTo(map);
+        
+        // Store marker reference
+        markersRef.current.set(image.id, marker);
+        
+        // Add click handler
+        markerElement.addEventListener('click', () => {
+          console.log('Marker clicked:', image.id);
+          setPopupImage(image);
+        });
+      }
+    });
+    
+    console.log(`✅ Added ${markersRef.current.size} markers to map`);
+  }, [imagesWithLocation]);
+
   // Initialize map
   useEffect(() => {
     if (!mapRef.current) {
@@ -117,17 +162,32 @@ export const MapView: React.FC<MapViewProps> = ({
     const loadMapbox = async () => {
       try {
         console.log('Loading Mapbox with token:', MAPBOX_TOKEN.startsWith('pk.') ? MAPBOX_TOKEN.slice(0, 20) + '...' : MAPBOX_TOKEN);
+        console.log('Token raw value:', JSON.stringify(MAPBOX_TOKEN));
+        console.log('Token length:', MAPBOX_TOKEN.length);
+        console.log('First 5 chars:', JSON.stringify(MAPBOX_TOKEN.slice(0, 5)));
+        console.log('Token check - starts with pk.:', MAPBOX_TOKEN.startsWith('pk.'));
+        console.log('Token check - not demo token:', MAPBOX_TOKEN !== 'pk.demo_token');
+        console.log('Token check - both conditions:', MAPBOX_TOKEN.startsWith('pk.') && MAPBOX_TOKEN !== 'pk.demo_token');
+        
+        // Clean the token by removing any extra quotes
+        const cleanToken = MAPBOX_TOKEN.replace(/^"|"$/g, '');
+        console.log('Clean token:', cleanToken);
         
         // Check if we have a real Mapbox token (starts with pk.) vs demo token
-        if (MAPBOX_TOKEN.startsWith('pk.') && MAPBOX_TOKEN !== 'pk.demo_token') {
+        if (cleanToken.startsWith('pk.') && cleanToken !== 'pk.demo_token') {
           // Try to load real Mapbox GL JS
           console.log('🗺️ Loading real Mapbox GL JS...');
           
           // Import Mapbox GL JS dynamically
           const mapboxgl = await import('mapbox-gl');
-          mapboxgl.accessToken = MAPBOX_TOKEN;
           
-          const map = new mapboxgl.Map({
+          // Note: Don't clear the container - Mapbox will handle it
+          
+          // Set the access token on the default export
+          mapboxgl.default.accessToken = cleanToken;
+          console.log('Set Mapbox access token:', cleanToken.slice(0, 20) + '...');
+          
+          const map = new mapboxgl.default.Map({
             container: mapRef.current,
             style: MAP_DEFAULTS.style,
             center: [mapState.center.lng, mapState.center.lat],
@@ -140,9 +200,13 @@ export const MapView: React.FC<MapViewProps> = ({
           });
           
           mapInstanceRef.current = map;
+          setUsingRealMapbox(true);
           setMapLoaded(true);
           setMapError(null);
           console.log('✅ Real Mapbox loaded successfully');
+          
+          // Add real Mapbox markers for images
+          addMarkersToMap(map);
           
         } else {
           // Fallback to mock implementation for demo token or invalid tokens
@@ -213,6 +277,13 @@ export const MapView: React.FC<MapViewProps> = ({
       }
     };
   }, []);
+
+  // Update markers when images change
+  useEffect(() => {
+    if (usingRealMapbox && mapInstanceRef.current) {
+      addMarkersToMap(mapInstanceRef.current);
+    }
+  }, [imagesWithLocation, usingRealMapbox, addMarkersToMap]);
 
   // Update map when images change
   useEffect(() => {
@@ -400,6 +471,19 @@ export const MapView: React.FC<MapViewProps> = ({
 
       {/* Map container */}
       <div className="map-container">
+        {/* Floating top bar */}
+        <div className="map-top-bar">
+          <div className="map-title">
+            <h1>📍 SeenittApp Map</h1>
+            <span className="map-stats">{imagesWithLocation.length} images • {clusters.length} locations</span>
+          </div>
+          <div className="map-actions">
+            <button className="view-toggle-btn" onClick={() => onViewChange()}>
+              🖼️ Gallery
+            </button>
+          </div>
+        </div>
+
         {!mapLoaded && (
           <div className="map-loading">
             <LoadingSpinner size="large" />
@@ -412,23 +496,25 @@ export const MapView: React.FC<MapViewProps> = ({
           className="map-canvas"
           style={{ opacity: mapLoaded ? 1 : 0 }}
         >
-          {/* This would be where Mapbox GL JS renders */}
-          <div className="map-placeholder">
-            <div className="placeholder-content">
-              <h3>Interactive Map</h3>
-              <p>Mapbox GL JS would render here</p>
-              <div className="placeholder-stats">
-                <div>Center: {mapState.center.lat.toFixed(4)}, {mapState.center.lng.toFixed(4)}</div>
-                <div>Zoom: {mapState.zoom.toFixed(1)}</div>
-                <div>Images: {imagesWithLocation.length}</div>
-                {showClusters && <div>Clusters: {clusters.length}</div>}
+          {/* Only show placeholder when not using real Mapbox */}
+          {!usingRealMapbox && (
+            <div className="map-placeholder">
+              <div className="placeholder-content">
+                <h3>Interactive Map</h3>
+                <p>Mapbox GL JS would render here</p>
+                <div className="placeholder-stats">
+                  <div>Center: {mapState.center.lat.toFixed(4)}, {mapState.center.lng.toFixed(4)}</div>
+                  <div>Zoom: {mapState.zoom.toFixed(1)}</div>
+                  <div>Images: {imagesWithLocation.length}</div>
+                  {showClusters && <div>Clusters: {clusters.length}</div>}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Render markers and clusters (in real implementation, these would be Mapbox layers) */}
-        {mapLoaded && (
+        {/* Render markers and clusters (only for mock implementation) */}
+        {mapLoaded && !usingRealMapbox && (
           <div className="map-overlays">
             {/* Individual markers */}
             {individualMarkers.map((marker, index) => (
@@ -550,9 +636,66 @@ export const MapView: React.FC<MapViewProps> = ({
         }
 
         .map-container {
-          flex: 1;
-          position: relative;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100vw;
+          height: 100vh;
+          z-index: 1;
           overflow: hidden;
+        }
+
+        .map-top-bar {
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          right: 20px;
+          z-index: 10;
+          background: rgba(255, 255, 255, 0.95);
+          backdrop-filter: blur(10px);
+          border-radius: 16px;
+          padding: 16px 24px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .map-title h1 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 600;
+          color: #1a1a1a;
+        }
+
+        .map-stats {
+          font-size: 14px;
+          color: #666;
+          margin-top: 4px;
+          display: block;
+        }
+
+        .view-toggle-btn {
+          background: #007bff;
+          color: white;
+          border: none;
+          border-radius: 12px;
+          padding: 12px 20px;
+          font-size: 14px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .view-toggle-btn:hover {
+          background: #0056b3;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
         }
 
         .map-loading {
@@ -610,10 +753,55 @@ export const MapView: React.FC<MapViewProps> = ({
           width: 100%;
           height: 100%;
           pointer-events: none;
+          z-index: 5;
         }
 
         .map-overlays > * {
           pointer-events: auto;
+        }
+
+        /* Mapbox marker styles */
+        .mapbox-marker {
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .mapbox-marker .marker-container {
+          position: relative;
+          width: 60px;
+          height: 60px;
+        }
+
+        .mapbox-marker .marker-image {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          overflow: hidden;
+          border: 3px solid white;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          transition: all 0.2s ease;
+        }
+
+        .mapbox-marker .marker-image img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .mapbox-marker .marker-status {
+          position: absolute;
+          top: -2px;
+          right: -2px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          border: 2px solid white;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .mapbox-marker:hover .marker-image {
+          transform: scale(1.1);
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
         }
 
         .map-loading-overlay {

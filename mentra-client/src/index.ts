@@ -353,7 +353,7 @@ class SeenittApp extends AppServer {
             // remove from active sessions
             this.processingSessions.delete(sessionId);
 
-            console.log(`Cleaned up session ${sessionId}`)
+            console.log(`Cleaned up session ${sessionId}`)  
         }
     }
 }

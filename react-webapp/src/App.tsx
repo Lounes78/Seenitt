@@ -347,6 +347,19 @@ const App: React.FC = () => {
     const currentSessionImages = currentSessionId ? getImagesBySession(currentSessionId) : images;
 
 
+    // Map view gets full-screen treatment
+    if (currentView === 'map') {
+        return (
+            <MapView 
+                images={currentSessionImages}
+                isLoading={connectionStatus === 'connecting'}
+                onImageSelect={(image) => console.log('Image selected:', image)}
+                onViewChange={() => setCurrentView('gallery')}
+            />
+        );
+    }
+
+    // Other views get centered layout
     return (
         <div className="app">
             {/* Header with status and controls */}
@@ -381,15 +394,6 @@ const App: React.FC = () => {
                         currentSessionId={currentSessionId}
                         streamUrl={streamUrl}
                         onViewChange={handleViewChange}
-                    />
-                )}
-                
-                {currentView === 'map' && (
-                    <MapView 
-                        images={currentSessionImages}
-                        isLoading={connectionStatus === 'connecting'}
-                        onImageSelect={(image) => console.log('Image selected:', image)}
-                        onViewChange={() => setCurrentView('gallery')}
                     />
                 )}
           

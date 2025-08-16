@@ -147,6 +147,110 @@ th, td {
   border-bottom: 1px solid #dee2e6;
 }
 
+/* Main App Layout */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+/* App Loading */
+.app-loading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  text-align: center;
+  padding: 20px;
+}
+
+.app-loading p {
+  margin-top: 16px;
+  font-size: 16px;
+  color: #666;
+}
+
+.loading-subtitle {
+  font-size: 14px;
+  color: #888;
+  margin-top: 8px;
+}
+
+/* App Error */
+.app-error {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  text-align: center;
+  padding: 20px;
+}
+
+.app-error h2 {
+  color: #dc3545;
+  margin-bottom: 16px;
+}
+
+.app-error p {
+  margin-bottom: 24px;
+  color: #666;
+}
+
+.retry-button {
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.retry-button:hover {
+  background: #0056b3;
+}
+
+/* Development info */
+.dev-info {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  max-width: 300px;
+}
+
+.dev-info summary {
+  cursor: pointer;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.dev-info pre {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
+}
+
 th {
   font-weight: 600;
   background-color: #f8f9fa;
