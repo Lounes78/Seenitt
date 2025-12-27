@@ -1,3 +1,9 @@
 *.jpg
 *.mp4
 /TRASH/
+/rectified2/
+board_crops/
+chessboard_crops/
+*png
+*jpg
+
