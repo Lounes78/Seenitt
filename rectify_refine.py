@@ -59,11 +59,22 @@ def reRectifyImages(color_img, tile_res=64, tile_buffer=1):
   vlines = best_pt[1] + (np.arange(9)-4)*tile_res
 
   all_corners = np.array(list(itertools.product(hlines, vlines)))
+  
+  # Filter corners that are outside the image
+  h, w = img.shape
+  valid_mask = (all_corners[:, 0] >= 0) & (all_corners[:, 0] < w) & \
+               (all_corners[:, 1] >= 0) & (all_corners[:, 1] < h)
+  valid_corners = all_corners[valid_mask]
+  
+  if len(valid_corners) < 4:
+      # print("Warning: Not enough valid corners for subpix refinement")
+      return color_img, False, np.eye(3)
+
   criteria = (cv2.TERM_CRITERIA_MAX_ITER + cv2.TERM_CRITERIA_COUNT, 30, 0.01)
-  better_corners = cv2.cornerSubPix(img, all_corners.astype(np.float32),
+  better_corners = cv2.cornerSubPix(img, valid_corners.astype(np.float32),
     (20,20), (-1,-1), criteria)
 
-  M, good_pts = cv2.findHomography(better_corners.astype(np.float32) + center_offset, all_corners.astype(np.float32), cv2.RANSAC)
+  M, good_pts = cv2.findHomography(better_corners.astype(np.float32) + center_offset, valid_corners.astype(np.float32), cv2.RANSAC)
 
   # should_rotate = checkChessboardAlignment(img)
   
