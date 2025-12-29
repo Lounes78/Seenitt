@@ -6,4 +6,6 @@ board_crops/
 chessboard_crops/
 *png
 *jpg
-
+*.onnx
+*.engine
+__pycache__/
