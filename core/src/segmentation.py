@@ -135,6 +135,64 @@ class ChessboardSegmenter:
         img = img.transpose(2, 0, 1)[np.newaxis, ...]
         return img, original_img
 
+    def encode_image(self, image_source):
+        """Run ONLY the Vision Encoder and return features."""
+        image_tensor, original_img = self._preprocess_image(image_source)
+        vision_res = self._run_inference(self.vision_ctx, self.vision_io, {'images': image_tensor})
+        return vision_res, original_img
+
+    def decode_from_features(self, vision_res, original_img, prompt="chessboard"):
+        """Run ONLY the Decoder using cached vision features."""
+        if prompt not in self.prompt_cache:
+            raise ValueError(f"Prompt '{prompt}' not cached.")
+        
+        decoder_input = {}
+        decoder_input.update(vision_res)
+        decoder_input['prompt_features'] = self.prompt_cache[prompt]['features']
+        decoder_input['prompt_mask'] = self.prompt_cache[prompt]['mask']
+        
+        decoder_res = self._run_inference(self.decoder_ctx, self.decoder_io, decoder_input)
+
+        mask_key = next(k for k in decoder_res.keys() if 'pred_masks' in k)
+        score_key = next(k for k in decoder_res.keys() if 'pred_logits' in k)
+        pred_masks = decoder_res[mask_key] 
+        pred_scores = decoder_res[score_key]
+
+        if prompt == "chessboard":
+            best_idx = np.argmax(pred_scores[0])
+            best_score = float(pred_scores[0][best_idx])
+            raw_mask = pred_masks[0, best_idx]
+            
+            # Clip and Sigmoid
+            raw_mask = np.clip(raw_mask, -80, 80)
+            prob_mask = 1.0 / (1.0 + np.exp(-raw_mask))
+
+            h, w = original_img.shape[:2]
+            mask_resized = cv2.resize(prob_mask, (w, h), interpolation=cv2.INTER_LINEAR)
+            binary_mask = (mask_resized > 0.5).astype(np.uint8) * 255
+            return binary_mask, original_img, best_score
+
+        else:
+            h, w = original_img.shape[:2]
+            valid_masks_list = []
+            
+            # Apply Clip and Sigmoid to scores
+            flat_scores = 1.0 / (1.0 + np.exp(-np.clip(pred_scores[0], -80, 80)))
+            valid_indices = np.where(flat_scores > 0.35)[0] 
+            
+            for idx in valid_indices:
+                raw_mask = np.clip(pred_masks[0, idx], -80, 80)
+                prob_mask = 1.0 / (1.0 + np.exp(-raw_mask))
+                
+                # FIX: Use INTER_LINEAR for smooth edges (matches your working script)
+                mask_resized = cv2.resize(prob_mask, (w, h), interpolation=cv2.INTER_LINEAR)
+                instance_mask = (mask_resized > 0.5).astype(np.uint8) * 255
+                
+                if cv2.countNonZero(instance_mask) > 0:
+                    valid_masks_list.append(instance_mask)
+            
+            return valid_masks_list, original_img, 0.0
+
     def predict(self, image_source, prompt="chessboard"):
         if prompt not in self.prompt_cache:
             raise ValueError(f"Prompt '{prompt}' not cached.")

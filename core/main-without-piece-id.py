@@ -91,7 +91,7 @@ def main(input_dir, output_dir, assets_dir):
             # 4. Grid Solving (On the Crop)
             remaining_ms = TOTAL_TIME_LIMIT_MS - seg_ms
             
-            warped_grid, corners_local, success, stats = solver.solve(crop_img, crop_mask, time_limit_ms=remaining_ms)
+            warped_grid, corners_local, _, success, stats = solver.solve(crop_img, crop_mask, time_limit_ms=remaining_ms)
             
             t_grid_end = time.perf_counter()
             grid_ms = (t_grid_end - t_seg_end) * 1000.0

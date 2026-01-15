@@ -1,13 +1,3 @@
-"""
-Chessboard Detection Pipeline with Performance Optimizations:
-
-1. Vision Encoder Caching: Run the expensive Vision Encoder once per frame,
-   then reuse features for both board and piece segmentation (decoder only).
-   
-2. Parallel CPU/GPU Execution: Grid Solver (CPU) and Piece Decoder (GPU) 
-   run simultaneously using ThreadPool, hiding latency of the faster operation.
-"""
-
 import os
 import glob
 import cv2
@@ -15,7 +5,6 @@ import numpy as np
 import time
 import sys
 import argparse
-from multiprocessing.pool import ThreadPool
 from src.segmentation import ChessboardSegmenter
 from src.grid_solver import GridSolver
 from src.filter import QualityFilter
@@ -44,15 +33,11 @@ def main(input_dir, output_dir, assets_dir):
 
     print("Warming up GPU...")
     if os.path.exists('warmup.jpg'):
-        vision_feats, orig = segmenter.encode_image('warmup.jpg')
-        segmenter.decode_from_features(vision_feats, orig, "chessboard")
-        segmenter.decode_from_features(vision_feats, orig, "chess pieces")
+        segmenter.predict('warmup.jpg', "chessboard")
     else:
         dummy = np.zeros((1008, 1008, 3), dtype=np.uint8)
         cv2.imwrite('warmup_dummy.jpg', dummy)
-        vision_feats, orig = segmenter.encode_image('warmup_dummy.jpg')
-        segmenter.decode_from_features(vision_feats, orig, "chessboard")
-        segmenter.decode_from_features(vision_feats, orig, "chess pieces")
+        segmenter.predict('warmup_dummy.jpg', "chessboard")
         os.remove('warmup_dummy.jpg')
     print("Warmup done.\n")
 
@@ -67,24 +52,19 @@ def main(input_dir, output_dir, assets_dir):
         t_start = time.perf_counter()
         
         try:
-            # 1. Encode Image ONCE (Vision Encoder)
-            vision_features, original_img = segmenter.encode_image(img_path)
-            t_encode_end = time.perf_counter()
-            encode_ms = (t_encode_end - t_start) * 1000.0
+            # 1. Segmentation (Board)
+            mask, original_img, score = segmenter.predict(img_path, "chessboard")
+            t_seg_end = time.perf_counter()
+            seg_ms = (t_seg_end - t_start) * 1000.0
 
-            if encode_ms > TOTAL_TIME_LIMIT_MS:
-                msg = "SKIP (Encode Slow)"
-                print(f"{filename:<25} | {encode_ms:<8.1f} | {'-':<8} | {'-':<8} | {encode_ms:<8.1f} | {msg}")
+            if seg_ms > TOTAL_TIME_LIMIT_MS:
+                msg = "SKIP (Seg Slow)"
+                print(f"{filename:<25} | {seg_ms:<8.1f} | {'-':<8} | {'-':<8} | {seg_ms:<8.1f} | {msg}")
                 log_file.write(f"{filename}: {msg}\n")
                 stats_skipped += 1
                 continue
 
-            # 2. Decode Board (using cached vision features)
-            mask, _, score = segmenter.decode_from_features(vision_features, original_img, "chessboard")
-            t_seg_end = time.perf_counter()
-            seg_ms = (t_seg_end - t_start) * 1000.0
-
-            # 3. Filter
+            # 2. Filter
             is_good, reason = quality_filter.check(mask, score)
             if not is_good:
                 msg = f"SKIP ({reason})"
@@ -93,7 +73,7 @@ def main(input_dir, output_dir, assets_dir):
                 stats_skipped += 1
                 continue
 
-            # 4. Focus Step (Crop)
+            # 3. Focus Step (Crop)
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             largest_contour = max(contours, key=cv2.contourArea)
             x, y, w, h = cv2.boundingRect(largest_contour)
@@ -103,48 +83,29 @@ def main(input_dir, output_dir, assets_dir):
             crop_img = original_img[y:y+h, x:x+w].copy()
             crop_mask = mask[y:y+h, x:x+w]
 
-            # --- PARALLEL EXECUTION: Grid Solver (CPU) || Piece Decoder (GPU) ---
-            
-            # Define wrapper for piece segmentation to run in background thread
-            def run_piece_decoder():
-                return segmenter.decode_from_features(vision_features, original_img, "chess pieces")
-            
-            # Launch Piece Decoder on GPU in background thread
-            pool = ThreadPool(processes=1)
-            async_pieces = pool.apply_async(run_piece_decoder)
-            
-            # Run Grid Solver on CPU in main thread (parallel with GPU decoder)
-            t_parallel_start = time.perf_counter()
+            # 4. Grid Solving
             remaining_ms = TOTAL_TIME_LIMIT_MS - seg_ms
-            warped_grid, grid_points_local, tile_centers_local, success, stats = solver.solve(
-                crop_img, crop_mask, time_limit_ms=remaining_ms
-            )
+            warped_grid, grid_points_local, tile_centers_local, success, stats = solver.solve(crop_img, crop_mask, time_limit_ms=remaining_ms)
+            
             t_grid_end = time.perf_counter()
-            grid_ms = (t_grid_end - t_parallel_start) * 1000.0
+            grid_ms = (t_grid_end - t_seg_end) * 1000.0
 
             if not success or 'timeout_at' in stats:
-                async_pieces.wait()  # Ensure GPU task completes before cleanup
-                pool.close()
-                pool.join()
                 status = f"SKIP (Timeout: {stats['timeout_at']})" if 'timeout_at' in stats else f"FAILED ({stats.get('error','')})"
                 total_ms = (t_grid_end - t_start) * 1000.0
                 print(f"{filename:<25} | {seg_ms:<8.1f} | {grid_ms:<8.1f} | {'-':<8} | {total_ms:<8.1f} | {status}")
                 log_file.write(f"{filename}: {status}\n")
                 stats_skipped += 1
                 continue
-            
-            # Wait for Piece Decoder to finish and retrieve results
-            piece_masks_list, _, _ = async_pieces.get()
-            pool.close()
-            pool.join()
-            
-            t_pieces_end = time.perf_counter()
-            pieces_ms = max((t_pieces_end - t_parallel_start) * 1000.0 - grid_ms, 0.0)
-            total_ms = (t_pieces_end - t_start) * 1000.0
-            
-            # --- END PARALLEL EXECUTION ---
 
-            # 7. Visualization & Mapping
+            # 5. Piece Detection
+            # Passing the unmasked crop ensures full pieces are seen
+            piece_masks_list, _, _ = segmenter.predict(crop_img, "chess pieces")
+            t_pieces_end = time.perf_counter()
+            pieces_ms = (t_pieces_end - t_grid_end) * 1000.0
+            total_ms = (t_pieces_end - t_start) * 1000.0
+
+            # 6. Visualization & Mapping
             vis_img = original_img.copy()
             grid_points_global = grid_points_local + np.array([x, y])
             tile_centers_global = tile_centers_local + np.array([x, y])
@@ -159,14 +120,9 @@ def main(input_dir, output_dir, assets_dir):
                 cv2.polylines(vis_img, [pts], False, (255, 0, 0), 2)
 
             # B. Process Pieces (Iterate list directly)
-            # Note: piece_masks_list are full-size masks (same dimensions as original_img)
-            # We crop them to the board region for piece detection
-            for i, full_piece_mask in enumerate(piece_masks_list):
+            for i, local_piece_mask in enumerate(piece_masks_list):
                 
-                # Crop the piece mask to board region
-                local_piece_mask = full_piece_mask[y:y+h, x:x+w]
-                
-                # Moments calculation on CROPPED mask
+                # Moments calculation on ISOLATED mask
                 M = cv2.moments(local_piece_mask)
                 if M["m00"] == 0: continue
                 
@@ -186,11 +142,14 @@ def main(input_dir, output_dir, assets_dir):
                 rgb_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
                 piece_color = tuple(map(int, rgb_color))
 
-                # Overlay using full-size mask
+                # Overlay
+                global_single_piece_mask = np.zeros(original_img.shape[:2], dtype=np.uint8)
+                global_single_piece_mask[y:y+h, x:x+w] = local_piece_mask
+
                 colored_layer = np.zeros_like(vis_img)
                 colored_layer[:] = piece_color
 
-                mask_indices = full_piece_mask > 0
+                mask_indices = global_single_piece_mask > 0
                 if np.any(mask_indices):
                      vis_img[mask_indices] = cv2.addWeighted(
                         vis_img[mask_indices], 0.6, 
