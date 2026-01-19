@@ -12,4 +12,5 @@ __pycache__/
 PieceClassifier/dataset
 PieceClassifier/inputs
 PieceClassifier/models
-PieceClassifier/Chess Pieces.v24-416x416_aug.yolov8
+*.ipynb
+*.log

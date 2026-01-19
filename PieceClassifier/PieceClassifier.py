@@ -11,7 +11,7 @@ import os
 class PieceClassifier:
     def __init__(self, 
                  model = ResNet18Classifier(),
-                 data_path: str = 'dataset',
+                 data_path =("dataset/dataset1", "dataset/dataset2"),
                  epochs: int = 50,
                  batch_size: int = 32,
                  num_workers: int = 0,
@@ -56,7 +56,7 @@ class PieceClassifier:
                                          num_workers = self.num_workers)
         
         self.test_dataloader = DataLoader(self.dataset_test,
-                                          batch_size = self.batch_size,
+                                          batch_size = 12,
                                           shuffle = False,
                                           num_workers = self.num_workers)
         
@@ -249,6 +249,18 @@ class PieceClassifier:
         
         print('ONNX saved: ',onnx_path)
 
+    @torch.no_grad()
+    def predict(self, img):
+        model = self.model_instance
+        model.eval()
+        
+        img = img.float().to(self.device)
+
+        output = model(img)
+
+        pred = output.argmax(dim=1)
+
+        return pred
 
 
 
