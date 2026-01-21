@@ -21,6 +21,7 @@ from src.grid_solver import GridSolver
 from src.filter import QualityFilter
 from src.ChessboardState import ChessboardState
 from src.tracker import BoardTracker 
+from src.StockfishModule import StockfishModule
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(THIS_DIR, "../PieceClassifier")) 
@@ -41,7 +42,7 @@ CLASS_TO_FEN = {
 
 MAX_CHANGED_TILES = 4  
 
-MIN_CONF = 0.9
+MIN_CONF = 0.95
 MIN_MARGIN = 0.10
 
 TOTAL_TIME_LIMIT_MS = 1000.0 
@@ -72,7 +73,8 @@ VALID_PIECES = set("PNBRQKpnbrqk")
 
 def render_virtual_board(board, square=70, margin=30,
                          show_conf=False, min_conf=0.0,
-                         show_color_tag=False):
+                         show_color_tag=False,
+                         best_move=None):
     """
     board: ChessboardState
     returns: BGR image (uint8)
@@ -133,6 +135,32 @@ def render_virtual_board(board, square=70, margin=30,
 
     cv2.putText(img, "MEMORY BOARD", (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
+    
+    if best_move:
+        cv2.putText(img, f"Best Move: {best_move}", (W - 220, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
+        #we  highlight the move on the board 
+        from_square = best_move[0:2]
+        to_square = best_move[2:4]
+        file_to_col = {'a':0,'b':1,'c':2,'d':3,'e':4,'f':5,'g':6,'h':7}
+        rank_to_row = {'1':7,'2':6,'3':5,'4':4,'5':3,'6':2,'7':1,'8':0}
+        from_col = file_to_col[from_square[0]]
+        from_row = rank_to_row[from_square[1]]
+        to_col = file_to_col[to_square[0]]
+        to_row = rank_to_row[to_square[1]]
+        fx1 = margin + from_col * square
+        fy1 = margin + from_row * square
+        fx2 = fx1 + square
+        fy2 = fy1 + square
+        tx1 = margin + to_col * square
+        ty1 = margin + to_row * square
+        tx2 = tx1 + square
+        ty2 = ty1 + square
+        cv2.rectangle(img, (fx1, fy1), (fx2, fy2), (0, 255, 0), 4)
+        cv2.rectangle(img, (tx1, ty1), (tx2, ty2), (0, 0, 255), 4)
+
+
+
 
     return img
 
@@ -162,6 +190,7 @@ def main(input_dir, output_dir, assets_dir):
         quality_filter = QualityFilter(margin=1, min_score=0.5, max_border_contact_ratio=0.05)
         piece_classifier = PieceClassifier(load_model_path = '../PieceClassifier/models/best_0.0555.pt',
                                            data_path =("../PieceClassifier/dataset/dataset1", "../PieceClassifier/dataset/dataset2"))
+        sf_module = StockfishModule(path_stockfish='./src/stockfish-windows')
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         sys.exit(1)
@@ -206,7 +235,7 @@ def main(input_dir, output_dir, assets_dir):
     print(f"{'FILENAME':<25} | {'SEG':<8} | {'GRID':<8} | {'PIECES':<8} | {'TOTAL':<8} | {'STATUS'}")
     print("-" * 95)
 
-    for img_path in image_files:
+    for frame_idx,img_path in enumerate(image_files):
         filename = os.path.basename(img_path)
         t_start = time.perf_counter()
         
@@ -539,13 +568,16 @@ def main(input_dir, output_dir, assets_dir):
             #board.update(obs, frame_idx)
             #board.set_from_observation(obs, frame_idx)
             accept_update, obs, diffs = tracker.step(tile_cands, frame_idx)
+            sf_module.set_position_from_state(tracker.board)
+            best_move = sf_module.get_best_move(frame_idx)
+
 
             if not accept_update:
                 print(f"[REJECT] frame {frame_idx} too many diffs: {len(diffs)} tiles")
 
             # Optional: draw the persistent board state on top
             #board.draw_overlay_visible(vis_img, tile_centers_global, obs)
-            memory_img = render_virtual_board(tracker.board, square=70, show_conf=False, min_conf=0.0)
+            memory_img = render_virtual_board(tracker.board, square=70, show_conf=False, min_conf=0.0,best_move = best_move)
 
             combo = hstack_images(vis_img, memory_img)
 
@@ -568,7 +600,7 @@ def main(input_dir, output_dir, assets_dir):
             prev_grid_points = None
             prev_crop_bbox = None
         
-        frame_idx+=1
+        #frame_idx+=1
 
     log_file.close()
     

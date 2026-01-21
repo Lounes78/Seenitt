@@ -219,3 +219,17 @@ class ChessboardState:
                 st.last_seen = -1
                 st.pending_piece = None
                 st.pending_count = 0
+
+        for idx, st in enumerate(self.tiles):
+            p = st.piece
+            if p in ("P", "p"):
+                r = idx // 8  
+                if r == 0 or r == 7:
+                    st.piece = None
+                    st.conf = 0.0
+                    st.last_seen = -1
+                    st.pending_piece = None
+                    st.pending_count = 0
+
+
+    
