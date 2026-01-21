@@ -46,4 +46,5 @@ dependencies {
 
     implementation("com.meta.wearable:mwdat-core:0.2.1")
     implementation("com.meta.wearable:mwdat-camera:0.2.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

@@ -1,4 +1,119 @@
 <?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121212"
+    android:fitsSystemWindows="true">
+
+    <!-- Status - always visible at the top -->
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:layout_marginHorizontal="20dp"
+        android:text="Disconnected"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:fontFamily="sans-serif-medium"
+        android:gravity="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Preview - takes almost all the screen -->
+    <ImageView
+        android:id="@+id/iv_preview"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        android:background="#1E1E1E"
+        android:contentDescription="Camera preview"
+        app:layout_constraintTop_toBottomOf="@id/tv_status"
+        app:layout_constraintBottom_toTopOf="@id/control_container"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Bottom controls panel - floating card style -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/control_container"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="24dp"
+        app:cardBackgroundColor="#1E1E1E"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:gravity="center_horizontal">
+
+            <!-- Main action button - big & prominent -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_stream"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:text="Start Streaming"
+                android:textSize="18sp"
+                android:textAllCaps="false"
+                android:fontFamily="sans-serif-medium"
+                style="@style/Widget.Material3.Button"
+                app:cornerRadius="28dp"
+                app:backgroundTint="#0066FF"           
+                app:icon="@android:drawable/ic_media_play"
+                app:iconGravity="start"
+                app:iconPadding="12dp" />
+
+            <!-- Secondary actions -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="16dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_connect"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="48dp"
+                    android:text="Connect Glasses"
+                    android:textSize="15sp"
+                    android:textColor="#FFFFFF"
+                    app:cornerRadius="24dp"
+                    app:strokeColor="#FFFFFF"
+                    android:layout_marginEnd="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_toggle_preview"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="48dp"
+                    android:text="Preview ON"
+                    android:textSize="15sp"
+                    android:textColor="#FFFFFF"
+                    app:cornerRadius="24dp"
+                    app:strokeColor="#FFFFFF" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+<!-- <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -20,12 +135,19 @@
         android:enabled="false"
         android:layout_marginTop="16dp"/>
 
+    <Button
+        android:id="@+id/btn_toggle_preview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Preview: ON"
+        android:layout_marginTop="8dp"/>
+
     <TextView
         android:id="@+id/tv_status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Status: Disconnected"
-        android:layout_marginTop="16dp"/>
+        android:layout_marginTop="16dp"
+        android:text="Status: Disconnected" />
 
     <ImageView
         android:id="@+id/iv_preview"
@@ -35,4 +157,4 @@
         android:layout_marginTop="16dp"
         android:scaleType="fitCenter"/>
 
-</LinearLayout>
+</LinearLayout> -->

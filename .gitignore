@@ -41,6 +41,8 @@ captures/
 *.jks
 *.keystore
 
+*.py
+
 .externalNativeBuild
 .cxx/
 
@@ -53,3 +55,7 @@ google-services.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+server
+weights
+.idea
