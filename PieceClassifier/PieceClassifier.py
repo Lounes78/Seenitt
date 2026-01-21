@@ -1,12 +1,14 @@
 from Resnet18 import ResNet18Classifier
-from ChessDataset import ChessDataset
+from ChessDataset import ChessDataset, resize_keep_height, transform
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 import numpy as np
 import torch
 from tqdm import tqdm
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import os
+import cv2
 
 class PieceClassifier:
     def __init__(self, 
@@ -253,14 +255,41 @@ class PieceClassifier:
     def predict(self, img):
         model = self.model_instance
         model.eval()
-        
-        img = img.float().to(self.device)
 
-        output = model(img)
+        img = resize_keep_height(img)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = transform(img)
+                
+        img = img.float().to(self.device).unsqueeze(0)
+        logits = model(img)                              # 1xK
 
-        pred = output.argmax(dim=1)
+        probs = F.softmax(logits, dim=1)                 # 1xK
+        conf, pred = probs.max(dim=1)                    
 
-        return pred
+        pred = int(pred.item())
+        conf = float(conf.item())
+
+        return pred, conf
+
+    @torch.no_grad()
+    def predict_topk(self, img, k = 3):
+        if k < 0:
+            raise Exception('k must be positive')
+        model = self.model_instance
+        model.eval()
+
+        img = resize_keep_height(img)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = transform(img)
+                
+        img = img.float().to(self.device).unsqueeze(0)
+        logits = model(img)                              # 1xK
+
+        probs = F.softmax(logits, dim=1)                 # 1xK
+
+        topk_probs, topk_indices = probs.topk(k, dim=1)
+
+        return topk_indices.squeeze(0).cpu().numpy(), topk_probs.squeeze(0).cpu().numpy()
 
 
 

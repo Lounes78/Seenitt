@@ -11,6 +11,8 @@ except ImportError:
     from line_intersection import *
     from rectify_refine import *
 
+
+
 class GridSolver:
     def __init__(self):
         self.tile_res = 64
@@ -199,10 +201,18 @@ class GridSolver:
             xx_cent, yy_cent = np.meshgrid(h_centers, v_centers)
             ideal_centers = np.vstack([xx_cent.flatten(), yy_cent.flatten()]).T.astype(np.float32)
 
-            real_intersections = cv2.perspectiveTransform(ideal_intersections.reshape(-1, 1, 2), M_inv_final).reshape(-1, 2)
-            real_tile_centers = cv2.perspectiveTransform(ideal_centers.reshape(-1, 1, 2), M_inv_final).reshape(-1, 2)
-            
-            final_warp_img, _ = getTileImage(img_orig, real_intersections[[0, 8, 80, 72]], tile_buffer=self.tile_buffer, tile_res=self.tile_res)
+            real_intersections = cv2.perspectiveTransform(
+                ideal_intersections.reshape(-1, 1, 2), M_inv_final
+            ).reshape(-1, 2).astype(np.float32)
+
+            # CANONICALIZE: in order to have same index
+            real_intersections = canonicalize_intersections(real_intersections)
+            real_tile_centers = centers_from_intersections(real_intersections)
+
+            final_warp_img, _ = getTileImage(
+                img_orig, real_intersections[[0, 8, 80, 72]],
+                tile_buffer=self.tile_buffer, tile_res=self.tile_res
+            )
 
             return final_warp_img, real_intersections, real_tile_centers, True, stats
 
@@ -212,3 +222,50 @@ class GridSolver:
         except Exception as e:
             stats['error'] = str(e)
             return None, None, None, False, stats
+
+
+
+def canonicalize_intersections(real_intersections_81):
+    """
+    INPUT: (81,2) intersections 9x9 in any orientation
+    OUTPUT: (81,2) in canonical order:
+        - row 0 is up
+        - col 0 is left
+    """
+    g0 = real_intersections_81.reshape(9, 9, 2)
+
+    cands = []
+    g = g0
+    for _ in range(4):
+        cands.append(g)
+        cands.append(np.fliplr(g))
+        g = np.rot90(g, 1, axes=(0, 1))
+
+    def score(G):
+        # Queremos dx>0 en fila 0, dy>0 en col 0
+        dx = np.mean(G[0, 1:, 0] - G[0, :-1, 0])
+        dy = np.mean(G[1:, 0, 1] - G[:-1, 0, 1])
+
+        pen = 0.0
+        if dx <= 0: pen += 1e6
+        if dy <= 0: pen += 1e6
+
+        # preferimos grids "suaves" (monotonos)
+        smooth_x = np.mean(np.abs(np.diff(G[0, :, 0])))
+        smooth_y = np.mean(np.abs(np.diff(G[:, 0, 1])))
+        return pen + 0.001 / (smooth_x + 1e-6) + 0.001 / (smooth_y + 1e-6)
+
+    best = min(cands, key=score)
+    return best.reshape(81, 2)
+
+def centers_from_intersections(intersections_81):
+    g = intersections_81.reshape(9, 9, 2)
+    centers = []
+    for r in range(8):
+        for c in range(8):
+            tl = g[r, c]
+            tr = g[r, c+1]
+            bl = g[r+1, c]
+            br = g[r+1, c+1]
+            centers.append((tl + tr + bl + br) / 4.0)
+    return np.array(centers, dtype=np.float32)

@@ -69,10 +69,7 @@ class ChessDataset(Dataset):
                         self.samples.append((full_path, idx, class_name, root))
 
         if len(self.samples) == 0:
-            raise RuntimeError(
-                f"No samples found. Checked roots={self.data_roots}, split='{split}'. "
-                f"Expected structure: <root>/<split>/<class_name>/*"
-            )
+            print(f'BE CAREFUL: 0 samples found on {split}')
 
     def __len__(self):
         return len(self.samples)

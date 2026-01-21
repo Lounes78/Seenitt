@@ -19,8 +19,135 @@ from multiprocessing.pool import ThreadPool
 from src.segmentation import ChessboardSegmenter
 from src.grid_solver import GridSolver
 from src.filter import QualityFilter
+from src.ChessboardState import ChessboardState
+from src.tracker import BoardTracker 
 
-TOTAL_TIME_LIMIT_MS = 300.0 
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(THIS_DIR, "../PieceClassifier")) 
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+from PieceClassifier import PieceClassifier
+
+CLASS_NAMES = [
+    'black-bishop', 'black-king', 'black-knight', 'black-pawn', 'black-queen', 'black-rook',
+    'white-bishop', 'white-king', 'white-knight', 'white-pawn', 'white-queen', 'white-rook'
+]
+
+CLASS_TO_FEN = {
+    "black-king": "k", "black-queen": "q", "black-rook": "r", "black-bishop": "b", "black-knight": "n", "black-pawn": "p",
+    "white-king": "K", "white-queen": "Q", "white-rook": "R", "white-bishop": "B", "white-knight": "N", "white-pawn": "P",
+}
+
+
+
+MAX_CHANGED_TILES = 4  
+
+MIN_CONF = 0.55
+MIN_MARGIN = 0.10
+
+TOTAL_TIME_LIMIT_MS = 1000.0 
+
+def safe_bbox_from_mask(mask_u8):
+    # mask_u8: 2D uint8 or bool
+    if mask_u8.dtype != np.uint8:
+        mask_u8 = (mask_u8 > 0).astype(np.uint8)
+
+    ys, xs = np.where(mask_u8 > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        return None
+    x1, x2 = int(xs.min()), int(xs.max())
+    y1, y2 = int(ys.min()), int(ys.max())
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return x1, y1, x2, y2
+
+def draw_label(img_bgr, text, x1, y1, x2, y2, color=(255, 255, 255)):
+    # place label above the bbox if possible
+    y_text = max(0, y1 - 8)
+    cv2.putText(img_bgr, text, (x1, y_text),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 4, cv2.LINE_AA)
+    cv2.putText(img_bgr, text, (x1, y_text),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 2, cv2.LINE_AA)
+
+VALID_PIECES = set("PNBRQKpnbrqk")
+
+def render_virtual_board(board, square=70, margin=30,
+                         show_conf=False, min_conf=0.0,
+                         show_color_tag=False):
+    """
+    board: ChessboardState
+    returns: BGR image (uint8)
+    Indexing assumed: tile_idx = r*8 + c (r=0 top row)
+    """
+    W = 8 * square + 2 * margin
+    H = 8 * square + 2 * margin
+    img = np.zeros((H, W, 3), dtype=np.uint8) + 245
+
+    # draw squares
+    for r in range(8):
+        for c in range(8):
+            x1 = margin + c * square
+            y1 = margin + r * square
+            x2 = x1 + square
+            y2 = y1 + square
+            is_dark = (r + c) % 2 == 1
+            color = (180, 180, 180) if is_dark else (235, 235, 235)
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, -1)
+
+    # grid lines
+    for k in range(9):
+        x = margin + k * square
+        y = margin + k * square
+        cv2.line(img, (x, margin), (x, margin + 8 * square), (120, 120, 120), 1)
+        cv2.line(img, (margin, y), (margin + 8 * square, y), (120, 120, 120), 1)
+
+    # pieces
+    for idx in range(64):
+        st = board.tiles[idx]
+        p = st.piece
+
+        if not p or p not in VALID_PIECES:
+            continue
+        if st.conf < max(min_conf, 0.0):
+            continue
+
+        r, c = divmod(idx, 8)
+        cx = margin + c * square + square // 2
+        cy = margin + r * square + square // 2
+
+        is_white = p.isupper()
+
+        # colores intuitivos
+        text_color = (240, 240, 240) if is_white else (30, 30, 30)
+        outline    = (30, 30, 30)     if is_white else (240, 240, 240)
+
+        label = p
+        if show_color_tag:
+            label += "(W)" if is_white else "(B)"
+        if show_conf:
+            label += f"{st.conf:.2f}"
+
+        cv2.putText(img, label, (cx - 18, cy + 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, outline, 4, cv2.LINE_AA)
+        cv2.putText(img, label, (cx - 18, cy + 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.85, text_color, 2, cv2.LINE_AA)
+
+    cv2.putText(img, "MEMORY BOARD", (10, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
+
+    return img
+
+
+def hstack_images(left_bgr, right_bgr):
+    # make same height
+    h1, w1 = left_bgr.shape[:2]
+    h2, w2 = right_bgr.shape[:2]
+    if h1 != h2:
+        scale = h1 / float(h2)
+        new_w = int(w2 * scale)
+        right_bgr = cv2.resize(right_bgr, (new_w, h1), interpolation=cv2.INTER_AREA)
+    return np.hstack([left_bgr, right_bgr])
+
 
 def main(input_dir, output_dir, assets_dir):
     if not os.path.exists(output_dir): os.makedirs(output_dir)
@@ -34,9 +161,21 @@ def main(input_dir, output_dir, assets_dir):
         segmenter = ChessboardSegmenter(assets_dir, prompts=["chessboard", "chess pieces"])
         solver = GridSolver()
         quality_filter = QualityFilter(margin=1, min_score=0.5, max_border_contact_ratio=0.05)
+        piece_classifier = PieceClassifier(load_model_path = '../PieceClassifier/models/best_0.0555.pt',
+                                           data_path =("../PieceClassifier/dataset/dataset1", "../PieceClassifier/dataset/dataset2"))
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
         sys.exit(1)
+
+    board = ChessboardState(inc=0.1,dec=0.05)
+    board.init_standard()
+    tracker = BoardTracker(
+                            board=board,
+                            max_changed_tiles=MAX_CHANGED_TILES,
+                            diff_conf_thr=0.60,
+                            min_keep=0.35,
+                        )
+    frame_idx = 0
 
     image_files = sorted(glob.glob(os.path.join(input_dir, '*.jpg')) + 
                          glob.glob(os.path.join(input_dir, '*.png')))
@@ -328,15 +467,51 @@ def main(input_dir, output_dir, assets_dir):
                 if tile_idx not in tile_to_piece or piece['area'] > tile_to_piece[tile_idx]['area']:
                     tile_to_piece[tile_idx] = piece
             
-            # C. Visualize deduplicated pieces
+            # C. Visualize deduplicated pieces and build obs
+            #obs = {i: (None, 1.0) for i in range(64)}
+            obs = {}
+            tile_cands = {}
             for piece in tile_to_piece.values():
                 i = piece['idx']
                 full_piece_mask = piece['mask']
                 pc_global = piece['centroid']
-                closest_center = tile_centers_global[piece['tile_idx']]
+                tile_idx = int(piece['tile_idx'])
                 
+                closest_center = tile_centers_global[tile_idx]
+
+                bbox = safe_bbox_from_mask(full_piece_mask)
+                if bbox is None:
+                    continue
+                x1, y1, x2, y2 = bbox
+
+                pad = 6
+                H_img, W_img = original_img.shape[:2]
+                x1p = max(0, x1 - pad); y1p = max(0, y1 - pad)
+                x2p = min(W_img - 1, x2 + pad); y2p = min(H_img - 1, y2 + pad)
+
+                crop_bgr = original_img[y1p:y2p, x1p:x2p].copy()
+
+                #pred_idx, pred_conf = piece_classifier.predict(crop_bgr)
+                pred_idxs, pred_confs = piece_classifier.predict_topk(crop_bgr,12)
+                
+                cands = []
+                for ci, cp in zip(pred_idxs, pred_confs):
+                    fen = CLASS_TO_FEN[CLASS_NAMES[ci]]
+                    cands.append((fen, float(cp)))
+
+                
+                if len(cands) >= 2:
+                    if cands[0][1] < MIN_CONF or (cands[0][1] - cands[1][1]) < MIN_MARGIN:
+                        continue  
+                else:
+                    if cands[0][1] < MIN_CONF:
+                        continue
+
+                tile_cands[tile_idx] = cands
+
+
                 # Unique Color
-                hue = int((i * 137.508) % 180) 
+                hue = int((i * 137.508) % 180)
                 hsv_color = np.array([[[hue, 255, 255]]], dtype=np.uint8)
                 rgb_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
                 piece_color = tuple(map(int, rgb_color))
@@ -347,21 +522,36 @@ def main(input_dir, output_dir, assets_dir):
 
                 mask_indices = full_piece_mask > 0
                 if np.any(mask_indices):
-                     vis_img[mask_indices] = cv2.addWeighted(
-                        vis_img[mask_indices], 0.6, 
-                        colored_layer[mask_indices], 0.4, 
+                    vis_img[mask_indices] = cv2.addWeighted(
+                        vis_img[mask_indices], 0.6,
+                        colored_layer[mask_indices], 0.4,
                         0
                     )
 
                 # Draw Vector
                 pt1 = tuple(pc_global.astype(int))
                 pt2 = tuple(closest_center.astype(int))
-                
+
                 cv2.line(vis_img, pt1, pt2, piece_color, 2)
                 cv2.circle(vis_img, pt1, 6, (255, 255, 255), -1)
                 cv2.circle(vis_img, pt1, 4, piece_color, -1)
 
-            cv2.imwrite(os.path.join(output_dir, filename), vis_img)
+            # Update persistent board state (only on OK frames)
+            #board.update(obs, frame_idx)
+            #board.set_from_observation(obs, frame_idx)
+            accept_update, obs, diffs = tracker.step(tile_cands, frame_idx)
+
+            if not accept_update:
+                print(f"[REJECT] frame {frame_idx} too many diffs: {len(diffs)} tiles")
+
+            # Optional: draw the persistent board state on top
+            #board.draw_overlay_visible(vis_img, tile_centers_global, obs)
+            memory_img = render_virtual_board(tracker.board, square=70, show_conf=False, min_conf=0.0)
+
+            combo = hstack_images(vis_img, memory_img)
+
+
+            cv2.imwrite(os.path.join(output_dir, filename), combo)
             
             stats_total.append(total_ms)
             status_suffix = " [TRACKED]" if tracking_used else ""
@@ -378,6 +568,8 @@ def main(input_dir, output_dir, assets_dir):
             prev_gray = None
             prev_grid_points = None
             prev_crop_bbox = None
+        
+        frame_idx+=1
 
     log_file.close()
     
