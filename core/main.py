@@ -19,6 +19,7 @@ import time
 import sys
 import argparse
 from multiprocessing.pool import ThreadPool
+import pycuda.autoinit
 
 from src.segmentation import ChessboardSegmenter
 from src.grid_solver import GridSolver
@@ -27,7 +28,7 @@ from src.grid_tracker import GridTracker
 from src.piece_processor import process_pieces
 from src.visualizer import draw_grid_lines, visualize_pieces
 
-TOTAL_TIME_LIMIT_MS = 300.0 
+TOTAL_TIME_LIMIT_MS = 500.0
 
 def main(input_dir, output_dir, assets_dir):
     if not os.path.exists(output_dir): os.makedirs(output_dir)
@@ -126,7 +127,18 @@ def main(input_dir, output_dir, assets_dir):
             
             # Define wrapper for piece segmentation to run in background thread
             def run_piece_decoder():
-                return segmenter.decode_from_features(vision_features, original_img, "chess pieces")
+                # 1. Get the global CUDA context
+                ctx = pycuda.autoinit.context
+                # 2. Push it to this thread so it can see the GPU
+                ctx.push()
+                try:
+                    return segmenter.decode_from_features(vision_features, original_img, "chess pieces")
+                except Exception as e:
+                    print(f"GPU Thread Error: {e}")
+                    raise e
+                finally:
+                    # 3. Pop it to clean up
+                    ctx.pop()
             
             # Launch Piece Decoder on GPU in background thread
             pool = ThreadPool(processes=1)
@@ -222,7 +234,7 @@ def main(input_dir, output_dir, assets_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", default="../vid1", help="Input directory")
+    parser.add_argument("--input", default="./captured_frames", help="Input directory")
     parser.add_argument("--output", default="./output", help="Output directory")
     parser.add_argument("--assets", default="./assets", help="Assets directory")
     args = parser.parse_args()

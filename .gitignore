@@ -1,6 +1,7 @@
 *.jpg
 *.mp4
 /TRASH/
+.TRASH
 /rectified2/
 board_crops/
 chessboard_crops/
@@ -9,3 +10,5 @@ chessboard_crops/
 *.onnx
 *.engine
 __pycache__/
+.ipynb_checkpoints
+.venv

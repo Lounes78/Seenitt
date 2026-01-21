@@ -1,0 +1,24 @@
+# --- Core Math & Image Processing ---
+# Pinning numpy < 2.0 is highly recommended for PyCUDA/TensorRT compatibility
+numpy<2.0
+opencv-python
+Pillow
+scipy
+matplotlib
+
+# --- CUDA Utilities ---
+# PyCUDA must be built against your local CUDA setup
+pycuda
+
+# --- SAM3 / NLP Dependencies ---
+tokenizers
+huggingface-hub
+filelock
+typing-extensions
+
+websockets
+av
+
+# --- EXCLUDED (Install Manually) ---
+# Do NOT uncomment this. It will break your specific driver setup.
+# tensorrt
