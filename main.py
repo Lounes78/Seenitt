@@ -12,6 +12,7 @@ def load_model(weights_path: str, device: str | None = None, half: bool = False)
   model = YOLO(weights_path, task='detect').to(device or 'cpu')
   if half and (device or 'cpu') != 'cpu':
     try:
+      model.fuse()  # fuse conv+bn before casting to half to avoid dtype mismatch
       model.model.half()
     except Exception:
       pass
