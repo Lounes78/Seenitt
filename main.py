@@ -1,4 +1,5 @@
 import argparse
+import time
 import cv2
 from ultralytics import YOLO
 import numpy as np
@@ -6,8 +7,15 @@ from card import Card
 from hand import Hand
 
 
-def load_model(weights_path: str) -> YOLO:
-  return YOLO(weights_path)
+def load_model(weights_path: str, device: str | None = None, half: bool = False) -> YOLO:
+  """Load YOLO model on selected device. Optionally cast to half precision for GPU."""
+  model = YOLO(weights_path, task='detect').to(device or 'cpu')
+  if half and (device or 'cpu') != 'cpu':
+    try:
+      model.model.half()
+    except Exception:
+      pass
+  return model
 
 
 def init_writer_from_frame(frame, fps: float, output_path: str | None):
@@ -19,13 +27,16 @@ def init_writer_from_frame(frame, fps: float, output_path: str | None):
   return cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
 
-def process_simple(model: YOLO, video_path: str, output_path: str | None) -> None:
+def process_simple(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, log_every: int = 30) -> None:
   capture = cv2.VideoCapture(video_path)
   if not capture.isOpened():
     raise FileNotFoundError(f"Cannot open video: {video_path}")
 
   fps = capture.get(cv2.CAP_PROP_FPS) or 30
   writer = None
+
+  frame_count = 0
+  total_time = 0.0
 
   while capture.isOpened():
     success, frame = capture.read()
@@ -35,23 +46,35 @@ def process_simple(model: YOLO, video_path: str, output_path: str | None) -> Non
     if writer is None:
       writer = init_writer_from_frame(frame, fps, output_path)
 
-    results = model.predict(frame, verbose=False)
+    start = time.time()
+    results = model.predict(frame, verbose=False, imgsz=imgsz)
     annotated_frame = results[0].plot()
+    elapsed = time.time() - start
+    total_time += elapsed
+    frame_count += 1
 
     if writer:
       writer.write(annotated_frame)
 
-    cv2.imshow('Cards', annotated_frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-      break
+    if display:
+      cv2.imshow('Cards', annotated_frame)
+      if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+    if log_every and frame_count % log_every == 0:
+      fps_now = frame_count / total_time if total_time else 0
+      print(f"[simple] frames={frame_count}, avg_ms={total_time/frame_count*1000:.1f}, fps={fps_now:.1f}")
 
   capture.release()
   if writer:
     writer.release()
   cv2.destroyAllWindows()
+  if frame_count:
+    fps_now = frame_count / total_time if total_time else 0
+    print(f"[simple] done: frames={frame_count}, avg_ms={total_time/frame_count*1000:.1f}, fps={fps_now:.1f}")
 
 
-def process_blackjack(model: YOLO, video_path: str, output_path: str | None) -> None:
+def process_blackjack(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, use_track: bool = False, log_every: int = 30) -> None:
   capture = cv2.VideoCapture(video_path)
   if not capture.isOpened():
     raise FileNotFoundError(f"Cannot open video: {video_path}")
@@ -60,6 +83,9 @@ def process_blackjack(model: YOLO, video_path: str, output_path: str | None) -> 
   width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
   writer = None
 
+  frame_count = 0
+  total_time = 0.0
+
   while capture.isOpened():
     success, frame = capture.read()
     if not success:
@@ -68,12 +94,19 @@ def process_blackjack(model: YOLO, video_path: str, output_path: str | None) -> 
     if writer is None:
       writer = init_writer_from_frame(frame, fps, output_path)
 
-    results = model.track(frame, persist=True, verbose=False)
+    start = time.time()
+    if use_track:
+      results = model.track(frame, persist=True, verbose=False, imgsz=imgsz)
+    else:
+      results = model.predict(frame, verbose=False, imgsz=imgsz)
     if len(results) == 0:
       continue
 
     annotated_frame = results[0].plot()
     result = results[0].cpu().boxes
+    elapsed = time.time() - start
+    total_time += elapsed
+    frame_count += 1
 
     names = model.names
     detect_xyxy = result.xyxy.tolist() if result.xyxy is not None else []
@@ -147,14 +180,22 @@ def process_blackjack(model: YOLO, video_path: str, output_path: str | None) -> 
     if writer:
       writer.write(annotated_frame)
 
-    cv2.imshow('Cards', annotated_frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-      break
+    if display:
+      cv2.imshow('Cards', annotated_frame)
+      if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+    if log_every and frame_count % log_every == 0:
+      fps_now = frame_count / total_time if total_time else 0
+      print(f"[blackjack] frames={frame_count}, avg_ms={total_time/frame_count*1000:.1f}, fps={fps_now:.1f}")
 
   capture.release()
   if writer:
     writer.release()
   cv2.destroyAllWindows()
+  if frame_count:
+    fps_now = frame_count / total_time if total_time else 0
+    print(f"[blackjack] done: frames={frame_count}, avg_ms={total_time/frame_count*1000:.1f}, fps={fps_now:.1f}")
 
 
 if __name__ == '__main__':
@@ -163,10 +204,16 @@ if __name__ == '__main__':
   parser.add_argument('--output', '-o', help='Path to save annotated video (mp4)')
   parser.add_argument('--mode', choices=['blackjack', 'simple'], default='blackjack', help='simple = boxes only, blackjack = strategy overlay')
   parser.add_argument('--weights', default='runs/detect/train7/weights/best.pt', help='Path to YOLO weights')
+  parser.add_argument('--imgsz', type=int, default=640, help='Inference image size (short side). Lower is faster.')
+  parser.add_argument('--device', default=None, help='Device: cpu, cuda, mps, or leave blank for auto/cpu')
+  parser.add_argument('--track', action='store_true', help='Use tracking (slower, persistent IDs). Default off for speed.')
+  parser.add_argument('--half', action='store_true', help='Use FP16 (GPU only) for speed.')
+  parser.add_argument('--log-every', type=int, default=30, help='Log perf stats every N frames (0 to disable).')
+  parser.add_argument('--no-display', action='store_true', help='Disable window display (faster, for headless/save only)')
   args = parser.parse_args()
 
-  model = load_model(args.weights)
+  model = load_model(args.weights, device=args.device, half=args.half)
   if args.mode == 'simple':
-    process_simple(model, args.video, args.output)
+    process_simple(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, log_every=args.log_every)
   else:
-    process_blackjack(model, args.video, args.output)
+    process_blackjack(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, use_track=args.track, log_every=args.log_every)

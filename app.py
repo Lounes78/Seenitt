@@ -1,51 +1,23 @@
-import os
 import argparse
-import cv2
-from dotenv import load_dotenv
-from ultralytics import YOLO
-from ultralytics.utils.plotting import Annotator  # ultralytics.yolo.utils.plotting is deprecated
-import numpy as np
-
-load_dotenv()
-
-# rf = Roboflow(api_key=os.getenv('API_KEY', ''))
-# project = rf.workspace().project("playing-cards-ow27d")
-# model = project.version(4).model
-
-def run_video(video_path: str) -> None:
-  """Run YOLO inference on a video file frame by frame."""
-  model = YOLO('runs/detect/train7/weights/best.pt')
-
-  capture = cv2.VideoCapture(video_path)
-  if not capture.isOpened():
-    raise FileNotFoundError(f"Cannot open video: {video_path}")
-
-  while True:
-    success, frame = capture.read()
-    if not success:
-      break
-
-    predictions = model.predict(frame, verbose=False)
-
-    for r in predictions:
-      annotator = Annotator(frame)
-      for box in r.boxes:
-        b = box.xyxy[0]
-        c = box.cls
-        annotator.box_label(b, model.names[int(c)])
-      frame = annotator.result()
-
-    cv2.imshow('YOLO V8 Detection', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-      break
-
-  capture.release()
-  cv2.destroyAllWindows()
+from main import load_model, process_simple, process_blackjack
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Run YOLOv8 detection on a video file.')
-  parser.add_argument('video', help='Path to the input video file')
+  parser = argparse.ArgumentParser(description='Alias wrapper; prefer running main.py directly.')
+  parser.add_argument('video', help='Path to input video file')
+  parser.add_argument('--output', '-o', help='Path to save annotated video (mp4)')
+  parser.add_argument('--mode', choices=['blackjack', 'simple'], default='blackjack', help='simple = boxes only, blackjack = strategy overlay')
+  parser.add_argument('--weights', default='runs/detect/train7/weights/best.pt', help='Path to YOLO weights')
+  parser.add_argument('--imgsz', type=int, default=640, help='Inference image size (short side). Lower is faster.')
+  parser.add_argument('--device', default=None, help='Device: cpu, cuda, mps, or leave blank for auto/cpu')
+  parser.add_argument('--track', action='store_true', help='Use tracking (slower, persistent IDs). Default off for speed.')
+  parser.add_argument('--half', action='store_true', help='Use FP16 (GPU only) for speed.')
+  parser.add_argument('--log-every', type=int, default=30, help='Log perf stats every N frames (0 to disable).')
+  parser.add_argument('--no-display', action='store_true', help='Disable window display (faster, for headless/save only)')
   args = parser.parse_args()
 
-  run_video(args.video)
+  model = load_model(args.weights, device=args.device, half=args.half)
+  if args.mode == 'simple':
+    process_simple(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, log_every=args.log_every)
+  else:
+    process_blackjack(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, use_track=args.track, log_every=args.log_every)
