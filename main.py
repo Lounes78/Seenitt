@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 import cv2
 from ultralytics import YOLO
@@ -28,13 +29,16 @@ def init_writer_from_frame(frame, fps: float, output_path: str | None):
   return cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
 
-def process_simple(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, log_every: int = 30) -> None:
+def process_simple(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, log_every: int = 30, save_frames_dir: str | None = None) -> None:
   capture = cv2.VideoCapture(video_path)
   if not capture.isOpened():
     raise FileNotFoundError(f"Cannot open video: {video_path}")
 
   fps = capture.get(cv2.CAP_PROP_FPS) or 30
   writer = None
+
+  if save_frames_dir:
+    os.makedirs(save_frames_dir, exist_ok=True)
 
   frame_count = 0
   total_time = 0.0
@@ -57,6 +61,10 @@ def process_simple(model: YOLO, video_path: str, output_path: str | None, displa
     if writer:
       writer.write(annotated_frame)
 
+    if save_frames_dir:
+      frame_path = os.path.join(save_frames_dir, f"frame_{frame_count:06d}.jpg")
+      cv2.imwrite(frame_path, annotated_frame)
+
     if display:
       cv2.imshow('Cards', annotated_frame)
       if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -75,7 +83,7 @@ def process_simple(model: YOLO, video_path: str, output_path: str | None, displa
     print(f"[simple] done: frames={frame_count}, avg_ms={total_time/frame_count*1000:.1f}, fps={fps_now:.1f}")
 
 
-def process_blackjack(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, use_track: bool = False, log_every: int = 30) -> None:
+def process_blackjack(model: YOLO, video_path: str, output_path: str | None, display: bool = True, imgsz: int = 640, use_track: bool = False, log_every: int = 30, save_frames_dir: str | None = None) -> None:
   capture = cv2.VideoCapture(video_path)
   if not capture.isOpened():
     raise FileNotFoundError(f"Cannot open video: {video_path}")
@@ -83,6 +91,9 @@ def process_blackjack(model: YOLO, video_path: str, output_path: str | None, dis
   fps = capture.get(cv2.CAP_PROP_FPS) or 30
   width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
   writer = None
+
+  if save_frames_dir:
+    os.makedirs(save_frames_dir, exist_ok=True)
 
   frame_count = 0
   total_time = 0.0
@@ -181,6 +192,10 @@ def process_blackjack(model: YOLO, video_path: str, output_path: str | None, dis
     if writer:
       writer.write(annotated_frame)
 
+    if save_frames_dir:
+      frame_path = os.path.join(save_frames_dir, f"frame_{frame_count:06d}.jpg")
+      cv2.imwrite(frame_path, annotated_frame)
+
     if display:
       cv2.imshow('Cards', annotated_frame)
       if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -211,10 +226,11 @@ if __name__ == '__main__':
   parser.add_argument('--half', action='store_true', help='Use FP16 (GPU only) for speed.')
   parser.add_argument('--log-every', type=int, default=30, help='Log perf stats every N frames (0 to disable).')
   parser.add_argument('--no-display', action='store_true', help='Disable window display (faster, for headless/save only)')
+  parser.add_argument('--save-frames', help='Directory to save annotated frames instead of/alongside video')
   args = parser.parse_args()
 
   model = load_model(args.weights, device=args.device, half=args.half)
   if args.mode == 'simple':
-    process_simple(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, log_every=args.log_every)
+    process_simple(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, log_every=args.log_every, save_frames_dir=args.save_frames)
   else:
-    process_blackjack(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, use_track=args.track, log_every=args.log_every)
+    process_blackjack(model, args.video, args.output, display=not args.no_display, imgsz=args.imgsz, use_track=args.track, log_every=args.log_every, save_frames_dir=args.save_frames)
