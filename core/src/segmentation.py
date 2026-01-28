@@ -183,7 +183,7 @@ class ChessboardSegmenter:
             h, w = original_img.shape[:2]
             valid_masks_list = []
             flat_scores = 1.0 / (1.0 + np.exp(-np.clip(pred_scores[0], -80, 80)))
-            valid_indices = np.where(flat_scores > 0.35)[0] 
+            valid_indices = np.where(flat_scores > 0.2)[0] 
             
             for idx in valid_indices:
                 raw_mask = np.clip(pred_masks[0, idx], -80, 80)
